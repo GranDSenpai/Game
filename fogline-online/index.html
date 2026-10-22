@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fogline Tactics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@700;800&family=Alegreya+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root {
+  --bg: #121619; --panel: #1a2024; --panel-2: #20282d; --line: #2d373d;
+  --ink: #e7e2d4; --muted: #8d9792;
+  --p1: #e8833a; --p2: #4fb8cc; --gold: #e9c15b; --danger: #e2574c; --heal: #6fcf86;
+  --tile: #1d2a2a; --tile-2: #1a2626; --fog: #0b0e10;
+  --font-display: "Alegreya SC", "Palatino Linotype", Georgia, serif;
+  --font-body: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.4;
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-left, 0px));
+}
+[hidden] { display: none !important; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; max-width: 1200px; margin: 0 auto; padding-block: 16px 32px; align-items: start; }
+@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.board-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; align-items: center; }
+.masthead { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.masthead h1 { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: .04em; margin: 0; }
+.hint { color: var(--muted); font-size: .95rem; }
+.board-wrap { width: min(100%, calc(100vh - 110px)); min-width: 260px; max-width: 100%; }
+@media (max-width: 900px) { .board-wrap { width: 100%; } }
+canvas#board { display: block; width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; touch-action: manipulation; background: var(--tile); }
+
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.block { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.label { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+.turnbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.who { display: flex; align-items: center; gap: 10px; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.who strong { font-family: var(--font-display); font-size: 1.25rem; letter-spacing: .03em; }
+.who span { color: var(--muted); font-size: .9rem; }
+button, input { font: inherit; color: inherit; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 700; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:focus-visible, .recruit:focus-visible, canvas:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.btn.primary { background: var(--gold); color: #1b1608; border-color: var(--gold); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.treasury { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: end; }
+.gold-num { font-family: var(--font-mono); font-size: 2.3rem; font-weight: 600; color: var(--gold); line-height: 1; font-variant-numeric: tabular-nums; }
+.gold-sub { color: var(--muted); font-size: .9rem; }
+.gold-sub b { color: var(--ink); }
+.interest { grid-column: 1 / -1; position: relative; height: 8px; background: var(--panel-2); border-radius: 4px; margin-top: 6px; }
+.interest .fill { position: absolute; inset: 0 auto 0 0; background: var(--gold); border-radius: 4px; opacity: .85; }
+.interest .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); opacity: .6; }
+.interest-labels { grid-column: 1 / -1; font-family: var(--font-mono); font-size: .72rem; color: var(--muted); position: relative; height: 14px; }
+.interest-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.recruit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.recruit-head .meta { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); }
+.tier { display: flex; flex-direction: column; gap: 6px; }
+.tier-name { font-size: .7rem; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; }
+.recruit { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; cursor: pointer; width: 100%; }
+.recruit:hover:not(:disabled) { border-color: var(--muted); }
+.recruit.active { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.recruit:disabled { opacity: .42; cursor: not-allowed; }
+.chip { grid-row: span 2; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: .78rem; color: #11161a; border: 3px solid; flex: none; }
+.recruit .nm { font-weight: 800; }
+.recruit .cost { font-family: var(--font-mono); font-weight: 600; color: var(--gold); grid-row: span 2; }
+.recruit .desc { font-size: .8rem; color: var(--muted); grid-column: 2; line-height: 1.3; }
+.card-title { display: flex; align-items: center; gap: 10px; }
+.card-title strong { font-family: var(--font-display); font-size: 1.15rem; }
+.stats { display: flex; gap: 14px; font-family: var(--font-mono); font-size: .85rem; flex-wrap: wrap; }
+.stats b { color: var(--gold); font-weight: 600; }
+.status { font-size: .85rem; color: var(--muted); }
+.feed { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .88rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; scroll-behavior: auto; }
+.feed .you { color: var(--ink); }
+.feed .enemy { color: var(--danger); }
+.feed .turn { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.feed .turn:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.feed .empty { color: var(--muted); }
+.rules-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: .88rem; display: flex; flex-direction: column; gap: 3px; }
+.rules-list b { color: var(--ink); }
+details summary { cursor: pointer; font-weight: 700; }
+details[open] summary { margin-bottom: 8px; }
+.invite { display: flex; gap: 8px; }
+.invite input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: .82rem; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.yourturn { color: var(--gold); font-weight: 800; }
+
+.lobby { min-height: 100%; display: grid; place-items: center; padding-block: 32px; }
+.lobby-card { max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 18px; }
+.lobby-card h1 { font-family: var(--font-display); font-size: 2.6rem; margin: 0; letter-spacing: .04em; line-height: 1; }
+.lobby-card p { margin: 0; color: var(--muted); }
+.join-row { display: flex; gap: 8px; }
+.join-row input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .2em; }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--danger); color: var(--ink); padding: 10px 16px; border-radius: 8px; z-index: 60; max-width: calc(100% - 32px); }
+</style>
+</head>
+<body>
+
+<div class="lobby" id="lobby" hidden>
+  <div class="lobby-card">
+    <h1>Fogline Tactics</h1>
+    <p>A two-player strategy game in the fog. Build your economy, recruit units, and find the enemy base before they find yours.</p>
+    <div class="block">
+      <div class="label">New game</div>
+      <button class="btn primary" id="create">Create a game</button>
+      <p class="status">You'll get a link to send to your friend.</p>
+    </div>
+    <div class="block">
+      <div class="label">Join a friend</div>
+      <form class="join-row" id="joinForm">
+        <input id="joinCode" maxlength="4" placeholder="CODE" autocomplete="off" aria-label="Game code">
+        <button class="btn" type="submit">Join</button>
+      </form>
+    </div>
+    <p class="status" id="lobbyMsg"></p>
+  </div>
+</div>
+
+<div class="app" id="game" hidden>
+  <div class="board-col">
+    <div class="masthead"><h1>Fogline Tactics</h1><div class="hint" id="hint"></div></div>
+    <div class="board-wrap"><canvas id="board" tabindex="0" aria-label="Game board"></canvas></div>
+  </div>
+  <aside class="panel" id="panel"></aside>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="/game.js"></script>
+<script>
+const G = window.Fogline, { UNITS, TIER, CONFIG, N, key, inB } = G;
+let V = null;               // my view from the server
+let opp = "waiting";        // opponent connection status
+let roomCode = null, ws = null, retry = 0, connected = false;
+let ui = { sel: null, shop: null, inspect: null };
+const pname = p => "Player " + p;
+const colorOf = p => p === 1 ? "var(--p1)" : "var(--p2)";
+
+/* ---------- connection ---------- */
+const lobby = document.getElementById("lobby"), gameEl = document.getElementById("game");
+const toastEl = document.getElementById("toast");
+let toastTimer;
+function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.hidden = true, 3200); }
+const tokenKey = code => "fogline-token-" + code;
+function getToken(code) { try { return sessionStorage.getItem(tokenKey(code)); } catch { return null; } }
+function setToken(code, t) { try { sessionStorage.setItem(tokenKey(code), t); } catch {} }
+
+function connect(first) {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
+  ws.onopen = () => {
+    connected = true; retry = 0;
+    if (first) ws.send(JSON.stringify(first));
+    else if (roomCode) ws.send(JSON.stringify({ type: "join", room: roomCode, token: getToken(roomCode) }));
+    render();
+  };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "joined") {
+      roomCode = m.room; setToken(m.room, m.token);
+      history.replaceState(null, "", "?room=" + m.room);
+    } else if (m.type === "state") {
+      const wasMyTurn = V && V.current === V.you && V.phase === "play";
+      V = m.view; opp = m.opponent;
+      const sel = ui.sel && G.byId(V, ui.sel);
+      if (!sel || V.current !== V.you) ui.sel = null;
+      if (V.current !== V.you) ui.shop = null;
+      if (!wasMyTurn && V.phase === "play" && V.current === V.you && !V.winner) { ui = { sel: null, shop: null, inspect: null }; flashTitle(); }
+      lobby.hidden = true; gameEl.hidden = false;
+      resize();
+    } else if (m.type === "error") {
+      if (m.fatal) { showLobby(m.msg); ws.onclose = null; ws.close(); }
+      else toast(m.msg);
+    }
+  };
+  ws.onclose = () => {
+    connected = false; render();
+    setTimeout(() => connect(), Math.min(8000, 500 * 2 ** retry++));
+  };
+}
+function send(cmd) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(cmd)); else toast("Reconnecting… try again in a moment."); }
+function flashTitle() { document.title = "Your turn · Fogline Tactics"; setTimeout(() => document.title = "Fogline Tactics", 4000); }
+
+function showLobby(msg) {
+  history.replaceState(null, "", location.pathname);
+  roomCode = null; V = null;
+  lobby.hidden = false; gameEl.hidden = true;
+  document.getElementById("lobbyMsg").textContent = msg || "";
+}
+document.getElementById("create").onclick = () => { document.getElementById("lobbyMsg").textContent = "Creating…"; connect({ type: "create" }); };
+document.getElementById("joinForm").onsubmit = e => {
+  e.preventDefault();
+  const code = document.getElementById("joinCode").value.trim().toUpperCase();
+  if (code.length !== 4) return document.getElementById("lobbyMsg").textContent = "Game codes are 4 letters.";
+  roomCode = code; connect({ type: "join", room: code, token: getToken(code) });
+};
+
+/* ---------- interaction ---------- */
+function interaction() {
+  const res = { vis: new Set(), moves: new Map(), acts: new Map(), spawns: new Set() };
+  if (!V) return res;
+  res.vis = G.visibleSet(V, V.you);
+  if (V.phase !== "play" || V.winner || V.current !== V.you) return res;
+  if (ui.shop) res.spawns = G.spawnTiles(V, V.you);
+  const p = ui.sel && G.byId(V, ui.sel);
+  if (p) { res.moves = G.computeMoves(V, p, res.vis); res.acts = G.computeActions(V, p, res.vis); }
+  return res;
+}
+function myTurn() { return V && V.phase === "play" && !V.winner && V.current === V.you; }
+function canRecruit(type) { return myTurn() && V.gold >= UNITS[type].cost && (!CONFIG.spawnsPerTurn || V.spawnsLeft > 0) && G.unitCount(V, V.you) < CONFIG.maxUnits; }
+
+function onBoardClick(ev) {
+  if (!V || V.winner) return;
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((ev.clientX - rect.left) / rect.width * N), r = Math.floor((ev.clientY - rect.top) / rect.height * N);
+  if (!inB(r, c)) return;
+  const k = key(r, c);
+  if (V.phase === "place") {
+    if (V.youPlaced) return toast("Waiting for your opponent to place their base.");
+    if (G.placeZone(V.you, r)) send({ type: "place", r, c }); else toast("Place your base in your shaded half.");
+    return;
+  }
+  const it = interaction();
+  if (ui.shop) {
+    if (it.spawns.has(k)) send({ type: "recruit", unit: ui.shop, r, c });
+    ui.shop = null; render(); return;
+  }
+  const sel = ui.sel && G.byId(V, ui.sel);
+  if (sel && it.moves.has(k)) return send({ type: "move", id: sel.id, r, c });
+  if (sel && it.acts.has(k)) return send({ type: "act", id: sel.id, r, c });
+  const q = G.pieceAt(V, r, c);
+  ui.inspect = null;
+  if (q && q.owner === V.you) { ui.sel = q.kind === "unit" && ui.sel !== q.id ? q.id : null; if (q.kind === "base") ui.inspect = q.id; }
+  else if (q) { ui.sel = null; ui.inspect = q.id; }
+  else ui.sel = null;
+  render();
+}
+
+/* ---------- canvas ---------- */
+const canvas = document.getElementById("board"), ctx = canvas.getContext("2d");
+const C = {};
+for (const n of ["p1", "p2", "gold", "danger", "heal", "tile", "tile-2", "ink"]) C[n] = getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim();
+const hatchCanvas = document.createElement("canvas"); hatchCanvas.width = hatchCanvas.height = 10;
+{ const g = hatchCanvas.getContext("2d"); g.strokeStyle = "rgba(160,175,170,0.07)"; g.lineWidth = 1.2; g.beginPath(); g.moveTo(0, 10); g.lineTo(10, 0); g.stroke(); }
+const hatch = ctx.createPattern(hatchCanvas, "repeat");
+function resize() {
+  const w = canvas.getBoundingClientRect().width, dpr = window.devicePixelRatio || 1;
+  if (w) { const px = Math.round(w * dpr); if (canvas.width !== px) canvas.width = canvas.height = px; }
+  render();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+
+function draw() {
+  if (!V) return;
+  const W = canvas.width, cs = W / N, pl = V.you, it = interaction(), vis = it.vis;
+  ctx.clearRect(0, 0, W, W);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { ctx.fillStyle = (r + c) % 2 ? C.tile : C["tile-2"]; ctx.fillRect(c * cs, r * cs, cs, cs); }
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!V.reveal && !vis.has(key(r, c))) {
+    ctx.fillStyle = "rgba(8,11,13,0.62)"; ctx.fillRect(c * cs, r * cs, cs, cs);
+    ctx.fillStyle = hatch; ctx.fillRect(c * cs, r * cs, cs, cs);
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.045)"; ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 1; i < N; i++) { ctx.moveTo(i * cs, 0); ctx.lineTo(i * cs, W); ctx.moveTo(0, i * cs); ctx.lineTo(W, i * cs); }
+  ctx.stroke();
+  const mine = pl === 1 ? C.p1 : C.p2, theirs = pl === 1 ? C.p2 : C.p1;
+  if (V.phase === "place" && !V.youPlaced) {
+    const y0 = pl === 1 ? N / 2 : 0;
+    ctx.fillStyle = mine + "22"; ctx.fillRect(0, y0 * cs, W, (N / 2) * cs);
+    ctx.strokeStyle = mine; ctx.setLineDash([6, 6]); ctx.lineWidth = 2; ctx.strokeRect(1, y0 * cs + 1, W - 2, (N / 2) * cs - 2); ctx.setLineDash([]);
+  }
+  for (const k of it.spawns) {
+    const r = Math.floor(k / N), c = k % N;
+    ctx.fillStyle = C.gold + "26"; ctx.fillRect(c * cs + 2, r * cs + 2, cs - 4, cs - 4);
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.strokeRect(c * cs + 3, r * cs + 3, cs - 6, cs - 6); ctx.setLineDash([]);
+  }
+  const sb = V.seenBase;
+  if (!V.reveal && sb && !vis.has(key(sb.r, sb.c))) {
+    ctx.strokeStyle = theirs; ctx.setLineDash([4, 4]); ctx.lineWidth = 2; ctx.strokeRect(sb.c * cs + cs * .14, sb.r * cs + cs * .14, cs * .72, cs * .72); ctx.setLineDash([]);
+    ctx.fillStyle = theirs; ctx.font = `700 ${cs * .38}px "Alegreya Sans", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("?", sb.c * cs + cs / 2, sb.r * cs + cs / 2);
+  }
+  for (const p of V.pieces) {
+    const spent = p.owner === pl && p.kind === "unit" && myTurn() && (p.fresh || (p.moved && p.acted));
+    drawPiece(p, cs, spent ? 0.5 : 1);
+  }
+  const selP = ui.sel && G.byId(V, ui.sel);
+  for (const k of it.moves.keys()) {
+    const r = Math.floor(k / N), c = k % N;
+    ctx.fillStyle = mine + "40"; ctx.fillRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2);
+    ctx.fillStyle = mine; ctx.beginPath(); ctx.arc(c * cs + cs / 2, r * cs + cs / 2, cs * .11, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const a of it.acts.values()) {
+    ctx.strokeStyle = a.kind === "heal" ? C.heal : C.danger; ctx.lineWidth = Math.max(2, cs * .08);
+    rrect(a.c * cs + 2, a.r * cs + 2, cs - 4, cs - 4, cs * .18); ctx.stroke();
+    if (a.kind === "attack" && selP && UNITS[selP.type].attack.type === "blast") { ctx.fillStyle = C.danger + "1f"; ctx.fillRect((a.c - 1) * cs, (a.r - 1) * cs, cs * 3, cs * 3); }
+  }
+  if (selP) { ctx.strokeStyle = C.ink; ctx.lineWidth = 2; rrect(selP.c * cs + 1.5, selP.r * cs + 1.5, cs - 3, cs - 3, cs * .16); ctx.stroke(); }
+  for (const g of V.pings) {
+    const x = g.c * cs + cs / 2, y = g.r * cs + cs / 2;
+    ctx.strokeStyle = C.danger; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, cs * .32, 0, Math.PI * 2);
+    ctx.moveTo(x - cs * .45, y); ctx.lineTo(x - cs * .18, y); ctx.moveTo(x + cs * .18, y); ctx.lineTo(x + cs * .45, y);
+    ctx.moveTo(x, y - cs * .45); ctx.lineTo(x, y - cs * .18); ctx.moveTo(x, y + cs * .18); ctx.lineTo(x, y + cs * .45);
+    ctx.stroke();
+  }
+}
+function drawPiece(p, cs, alpha) {
+  const x = p.c * cs, y = p.r * cs, cx = x + cs / 2, cy = y + cs / 2, col = p.owner === 1 ? C.p1 : C.p2;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if (p.kind === "base") {
+    const s = cs * .78, x0 = cx - s / 2, y0 = cy - s / 2 - cs * .04, m = s / 5;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x0, y0 + s); ctx.lineTo(x0, y0);
+    for (let i = 0; i < 5; i++) { const xx = x0 + i * m; ctx.lineTo(xx + m, y0 + (i % 2 === 0 ? m * .9 : 0)); ctx.lineTo(xx + m, y0 + (i % 2 === 0 ? 0 : m * .9)); }
+    ctx.lineTo(x0 + s, y0 + s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .3}px "Alegreya Sans", sans-serif`; ctx.fillText("HQ", cx, cy + cs * .04);
+  } else {
+    const d = UNITS[p.type];
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy - cs * .04, cs * .34, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = TIER[d.tier][1]; ctx.lineWidth = Math.max(1.5, cs * .075); ctx.stroke();
+    ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .3}px "Alegreya Sans", sans-serif`; ctx.fillText(d.abbr, cx, cy - cs * .02);
+  }
+  const bw = cs * .76, bh = Math.max(2.5, cs * .085), bx = cx - bw / 2, by = y + cs * .86, ratio = Math.max(0, p.hp / p.maxHp);
+  ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = ratio > .5 ? C.heal : ratio > .25 ? C.gold : C.danger; ctx.fillRect(bx, by, bw * ratio, bh);
+  ctx.restore();
+}
+
+/* ---------- panel ---------- */
+const panel = document.getElementById("panel"), hintEl = document.getElementById("hint");
+function moveText(m) {
+  return { step: m.range === 1 ? "Steps 1 square any direction" : `Walks up to ${m.range} squares`, rook: `Slides straight up to ${m.range}`,
+    bishop: `Slides diagonally up to ${m.range}`, queen: `Slides any line up to ${m.range}`, knight: "Jumps in an L, like a knight", fly: `Flies anywhere within ${m.range}` }[m.type];
+}
+function attackText(a) {
+  if (a.type === "line") return `fires ${a.dirs === "rook" ? "straight" : a.dirs === "bishop" ? "diagonally" : "in any line"}, range ${a.range}`;
+  return { melee: "strikes 1 adjacent square", cleave: "hits every adjacent enemy", ranged: `shoots any enemy within ${a.range}`,
+    knight: "strikes L-shaped squares", blast: `blasts a 3×3 area within ${a.range}` }[a.type];
+}
+function unitDesc(d) {
+  let s = `${moveText(d.move)}; ${d.attack ? attackText(d.attack) : "can't attack"}.`;
+  if ((d.attacks || 1) > 1) s += ` Attacks ${d.attacks} times per turn.`;
+  if (d.heal) s += ` Can heal an ally ${d.heal.amount} within ${d.heal.range} instead.`;
+  if (d.siege) s += ` ×${d.siege} damage to bases.`;
+  if (d.vision) s += ` Sees ${d.vision}.`;
+  return s;
+}
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+
+function feedBlock() {
+  const items = (V.feed || []).map(f => `<div class="${f.kind}">${esc(f.text)}</div>`).join("");
+  return `<div class="block"><div class="label">Battle feed</div><div class="feed" id="feed" aria-live="polite">${items || '<div class="empty">Nothing has happened yet.</div>'}</div></div>`;
+}
+// keep the feed pinned to the newest line unless the player has scrolled up to read
+function captureFeed() {
+  const f = document.getElementById("feed");
+  return f ? { top: f.scrollTop, atBottom: f.scrollHeight - f.scrollTop - f.clientHeight < 24 } : null;
+}
+function restoreFeed(s) {
+  const f = document.getElementById("feed"); if (!f) return;
+  f.scrollTop = !s || s.atBottom ? f.scrollHeight : s.top;
+}
+function render() {
+  const feedScroll = captureFeed();
+  draw();
+  if (!V) return;
+  const pl = V.you, pc = colorOf(pl);
+  const link = location.origin + location.pathname + "?room=" + roomCode;
+  const oppDot = opp === "online" ? "var(--heal)" : opp === "offline" ? "var(--danger)" : "var(--muted)";
+  const oppText = opp === "online" ? "Opponent connected" : opp === "offline" ? "Opponent disconnected" : "Waiting for a friend to join";
+  const conn = connected ? "" : `<div class="status" style="color:var(--danger)">Connection lost. Reconnecting…</div>`;
+
+  let hint;
+  if (V.winner) hint = V.winner === pl ? "You destroyed the enemy base. The full board is revealed." : "Your base fell. The full board is revealed.";
+  else if (V.phase === "place") hint = V.youPlaced ? "Waiting for your opponent to place their base." : "Click a square in your shaded half to place your base.";
+  else if (!myTurn()) hint = "Opponent's turn. You'll see hits on your units as they happen.";
+  else if (ui.shop) hint = `Click a gold square to place your ${UNITS[ui.shop].name}.`;
+  else if (ui.sel) hint = "Dots: move. Red: attack. Green: heal. Click the unit again to deselect.";
+  else hint = "Your turn. Pick a recruit, or click one of your units.";
+  hintEl.textContent = hint;
+
+  const header = `<div class="block">
+    <div class="turnbar">
+      <div class="who"><div class="swatch" style="background:${pc}"></div><div><strong>You are ${pname(pl)}</strong><br>
+        <span>${V.phase === "place" ? "Base placement" : `Turn ${V.turn} · ${myTurn() ? '<span class="yourturn">Your move</span>' : V.winner ? "Game over" : "Opponent's move"}`}</span></div></div>
+      ${V.phase === "play" ? `<button class="btn primary" data-act="end" ${myTurn() ? "" : "disabled"}>End turn</button>` : ""}
+    </div>
+    <div class="status"><span class="dot" style="background:${oppDot}"></span>${oppText} · Game ${esc(roomCode)}</div>${conn}
+  </div>`;
+  const invite = opp === "waiting" ? `<div class="block"><div class="label">Invite a friend</div>
+    <div class="invite"><input id="inviteLink" readonly value="${esc(link)}"><button class="btn" data-act="copy">Copy</button></div>
+    <div class="status">Send this link. The first person to open it joins as Player 2. You can place your base while you wait.</div></div>` : "";
+
+  if (V.phase === "place") {
+    panel.innerHTML = header + invite + feedBlock() + `<div class="block"><p class="status" style="margin:0">Your base reveals ${CONFIG.baseVision} squares around it and starts with ${CONFIG.baseHp} HP. Recruits appear within ${CONFIG.spawnRadius} squares of it. Player 1 builds in the bottom half, Player 2 in the top.</p></div>` + rulesBlock();
+    restoreFeed(feedScroll);
+    return;
+  }
+
+  const gold = V.gold, next = G.incomeFor(gold), maxT = CONFIG.interestSteps[CONFIG.interestSteps.length - 1] + 2;
+  const ticks = CONFIG.interestSteps.map(t => `<div class="tick" style="left:${t / maxT * 100}%"></div>`).join("");
+  const tickLabels = CONFIG.interestSteps.map(t => `<span style="left:${t / maxT * 100}%">${t}g → +${G.incomeFor(t)}</span>`).join("");
+
+  let tiers = "";
+  for (let t = 1; t <= 5; t++) {
+    const list = Object.entries(UNITS).filter(([, d]) => d.tier === t);
+    if (!list.length) continue;
+    tiers += `<div class="tier"><div class="tier-name" style="color:${TIER[t][1]}">Tier ${t} · ${TIER[t][0]} · ${list[0][1].cost} gold</div>` +
+      list.map(([id, d]) => `<button class="recruit${ui.shop === id ? " active" : ""}" data-buy="${id}" ${canRecruit(id) ? "" : "disabled"}>
+        <span class="chip" style="background:${pc};border-color:${TIER[t][1]}">${d.abbr}</span>
+        <span class="nm">${d.name} <span class="status">· ${d.hp} HP${d.attack ? ` · ${d.atk} ATK` : ` · heals ${d.heal.amount}`}</span></span>
+        <span class="cost">${d.cost}g</span><span class="desc">${unitDesc(d)}</span></button>`).join("") + `</div>`;
+  }
+
+  let card = "";
+  const shown = (ui.sel && G.byId(V, ui.sel)) || (ui.inspect && G.byId(V, ui.inspect));
+  if (shown) {
+    const mine = shown.owner === pl, scol = colorOf(shown.owner);
+    if (shown.kind === "base") {
+      card = `<div class="block"><div class="card-title"><div class="swatch" style="background:${scol}"></div><strong>${mine ? "Your base" : "Enemy base"}</strong></div>
+        <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>Vision <b>${CONFIG.baseVision}</b></span></div>
+        <div class="status">${mine ? "Recruit from the list below. Lose this and you lose the game." : "Destroy it to win. Siege units deal bonus damage here."}</div></div>`;
+    } else {
+      const d = UNITS[shown.type];
+      const left = (UNITS[shown.type].attacks || 1) - (shown.used || 0);
+      const st = !mine ? "Enemy unit." : shown.fresh ? "Just recruited. Ready next turn." : shown.moved && shown.acted ? "Done for this turn." : `${shown.moved ? "Moved" : "Can move"} · ${shown.acted ? "Acted" : left > 1 ? `${left} attacks left` : "Can act"}`;
+      card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
+        <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>ATK <b>${d.atk}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
+        <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div></div>`;
+    }
+  }
+
+  const over = V.winner ? `<div class="block"><div class="card-title"><strong>${V.winner === pl ? "Victory" : "Defeat"}</strong></div><button class="btn primary" data-act="rematch">Rematch</button></div>` : "";
+
+  panel.innerHTML = header + invite + over + feedBlock() + `
+    <div class="block"><div class="treasury">
+      <div class="gold-num">${gold}g</div>
+      <div class="gold-sub">Next turn <b>+${next}</b> (${CONFIG.baseIncome} + ${G.interestFor(gold)} interest)<br>Hold ${CONFIG.interestSteps.join(" / ")} gold for more interest</div>
+      <div class="interest"><div class="fill" style="width:${Math.min(100, gold / maxT * 100)}%"></div>${ticks}</div>
+      <div class="interest-labels">${tickLabels}</div></div></div>
+    ${card}
+    <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${CONFIG.spawnsPerTurn ? V.spawnsLeft + " recruits left · " : ""}${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div>${tiers}</div>
+    ${rulesBlock()}`;
+  restoreFeed(feedScroll);
+}
+function rulesBlock() {
+  return `<div class="block"><details><summary>How to play</summary><ul class="rules-list">
+    <li>Both players place a base in their own half. Player 1 moves first.</li>
+    <li>Both players start with <b>${CONFIG.startGold} gold</b> and get nothing on turn 1. From turn 2 you earn <b>${CONFIG.baseIncome} gold</b> plus 1 interest at each of <b>${CONFIG.interestSteps.join(", ")}</b> gold you're holding. Spend now to rush, or save to scale.</li>
+    <li>Recruit ${CONFIG.spawnsPerTurn ? `up to <b>${CONFIG.spawnsPerTurn}</b> units` : "as many units as you can afford"} each turn near your base (max ${CONFIG.maxUnits} on the board). New units act next turn.</li>
+    <li>Each unit can move once and attack (or heal) once per turn, in either order.</li>
+    <li>You only see squares near your units and base. Enemies outside your vision are never shown, even when they hit you.</li>
+    <li>Moving into a hidden enemy stops you short.</li>
+    <li>Destroy the enemy base to win.</li></ul></details></div>`;
+}
+
+panel.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || b.disabled) return;
+  if (b.dataset.buy) { ui.shop = ui.shop === b.dataset.buy ? null : b.dataset.buy; ui.sel = null; ui.inspect = null; render(); }
+  else if (b.dataset.act === "end") { ui = { sel: null, shop: null, inspect: null }; send({ type: "end" }); }
+  else if (b.dataset.act === "rematch") send({ type: "rematch" });
+  else if (b.dataset.act === "copy") {
+    const input = document.getElementById("inviteLink");
+    (navigator.clipboard ? navigator.clipboard.writeText(input.value) : Promise.reject()).then(() => toast("Link copied."), () => { input.select(); });
+  }
+});
+canvas.addEventListener("click", onBoardClick);
+document.addEventListener("keydown", e => { if (e.key === "Escape") { ui = { sel: null, shop: null, inspect: null }; render(); } });
+new ResizeObserver(resize).observe(canvas);
+if (document.fonts) document.fonts.ready.then(render);
+
+const params = new URLSearchParams(location.search);
+const startRoom = (params.get("room") || "").toUpperCase();
+if (startRoom) { roomCode = startRoom; connect({ type: "join", room: startRoom, token: getToken(startRoom) }); }
+else showLobby();
+</script>
+</body>
+</html>
