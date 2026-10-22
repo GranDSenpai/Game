@@ -8,11 +8,12 @@
    ===================================================================== */
 const CONFIG = {
   boardSize: 20,          // board is boardSize x boardSize
-  startGold: 2,           // gold before your first turn's income
-  secondPlayerBonus: 1,   // extra starting gold for player 2
-  baseIncome: 2,              // gold every turn
-  interestSteps: [4, 8, 12],  // +1 income for each threshold you hold at turn start
-  baseHp: 25,
+  startGold: 3,               // both players start with this; no income on turn 1
+  secondPlayerBonus: 0,       // extra starting gold for player 2
+  baseIncome: 2,              // gold every turn from turn 2
+  interestBase: 0,            // interest you always get (holding 0 gold)
+  interestSteps: [4, 8, 12, 16], // +1 more interest for each threshold you hold at turn start
+  baseHp: 150,
   baseVision: 4,          // squares the base reveals (any direction)
   unitVision: 3,          // default squares a unit reveals
   spawnRadius: 2,         // how far from your base you can place recruits
@@ -25,23 +26,30 @@ const CONFIG = {
    Attack types: melee (one adjacent), cleave (all adjacent enemies), ranged (any within range),
                  line (first piece along rook/bishop/queen lines), knight (L squares),
                  blast (3x3 area centred on an enemy within range).
+   attack: null means the unit can't attack. attacks: how many attacks per turn (default 1).
+   tier: groups units in the shop and sets their ring colour; cost is what you pay.
    heal: optional, used instead of attacking. siege: damage multiplier vs bases. */
 const UNITS = {
-  footman:   { name: "Footman",   abbr: "Ft", cost: 1, hp: 4,  atk: 1, move: { type: "step", range: 2 }, attack: { type: "melee" } },
-  slinger:   { name: "Slinger",   abbr: "Sl", cost: 1, hp: 3,  atk: 1, move: { type: "step", range: 1 }, attack: { type: "ranged", range: 2 } },
-  scout:     { name: "Scout",     abbr: "Sc", cost: 1, hp: 3,  atk: 1, move: { type: "rook", range: 3 }, attack: { type: "melee" }, vision: 5 },
-  spearman:  { name: "Spearman",  abbr: "Sp", cost: 2, hp: 6,  atk: 2, move: { type: "step", range: 1 }, attack: { type: "line", dirs: "rook", range: 2 } },
-  rider:     { name: "Rider",     abbr: "Rd", cost: 2, hp: 5,  atk: 2, move: { type: "knight" },         attack: { type: "melee" } },
-  acolyte:   { name: "Acolyte",   abbr: "Ac", cost: 2, hp: 4,  atk: 1, move: { type: "step", range: 2 }, attack: { type: "melee" }, heal: { amount: 2, range: 2 } },
-  berserker: { name: "Berserker", abbr: "Bz", cost: 3, hp: 8,  atk: 2, move: { type: "step", range: 2 }, attack: { type: "cleave" } },
-  ballista:  { name: "Ballista",  abbr: "Bl", cost: 3, hp: 5,  atk: 3, move: { type: "step", range: 1 }, attack: { type: "line", dirs: "rook", range: 6 }, siege: 2 },
-  hexer:     { name: "Hexer",     abbr: "Hx", cost: 3, hp: 5,  atk: 3, move: { type: "bishop", range: 3 }, attack: { type: "line", dirs: "bishop", range: 4 } },
-  warden:    { name: "Warden",    abbr: "Wd", cost: 4, hp: 15, atk: 2, move: { type: "step", range: 2 }, attack: { type: "cleave" } },
-  pyromancer:{ name: "Pyromancer",abbr: "Py", cost: 4, hp: 6,  atk: 3, move: { type: "step", range: 1 }, attack: { type: "blast", range: 3 } },
-  assassin:  { name: "Assassin",  abbr: "As", cost: 4, hp: 6,  atk: 5, move: { type: "queen", range: 4 }, attack: { type: "knight" }, vision: 4 },
-  titan:     { name: "Titan",     abbr: "Ti", cost: 5, hp: 22, atk: 4, move: { type: "step", range: 2 }, attack: { type: "cleave" }, siege: 2 },
-  dragon:    { name: "Dragon",    abbr: "Dr", cost: 5, hp: 14, atk: 4, move: { type: "fly", range: 4 },  attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
-  archmage:  { name: "Archmage",  abbr: "Am", cost: 5, hp: 8,  atk: 4, move: { type: "step", range: 1 }, attack: { type: "blast", range: 5 }, heal: { amount: 3, range: 3 } },
+  // Tier 1
+  scout:     { name: "Scout",      abbr: "Sc", tier: 1, cost: 1, hp: 3,  atk: 1,  move: { type: "queen", range: 3 },  attack: { type: "melee" }, vision: 5 },
+  slinger:   { name: "Slinger",    abbr: "Sl", tier: 1, cost: 1, hp: 3,  atk: 2,  move: { type: "queen", range: 2 },  attack: { type: "ranged", range: 3 } },
+  footman:   { name: "Footman",    abbr: "Ft", tier: 1, cost: 1, hp: 5,  atk: 4,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
+  // Tier 2
+  spearman:  { name: "Spearman",   abbr: "Sp", tier: 2, cost: 3, hp: 7,  atk: 4,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
+  cavalry:   { name: "Cavalry",    abbr: "Cv", tier: 2, cost: 3, hp: 5,  atk: 5,  move: { type: "rook", range: 4 },   attack: { type: "melee" } },
+  healer:    { name: "Healer",     abbr: "He", tier: 2, cost: 3, hp: 4,  atk: 0,  move: { type: "step", range: 2 },   attack: null, heal: { amount: 5, range: 2 } },
+  // Tier 3
+  berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 9, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
+  ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 6, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
+  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 6, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 } },
+  // Tier 4
+  warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 9, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 9, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 } },
+  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 6, hp: 10, atk: 4,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
+  // Tier 5
+  titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 13, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
+  dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 13, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
+  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 13, hp: 15, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "blast", range: 5 } },
 };
 const TIER = { 1: ["Common", "#9ea7a3"], 2: ["Uncommon", "#5fb46a"], 3: ["Rare", "#4f8fd9"], 4: ["Epic", "#a96ddc"], 5: ["Legendary", "#e3b23c"] };
 
@@ -61,7 +69,7 @@ function newGame() {
     phase: "place", current: 1, turn: 0, pieces: [], nextId: 1,
     gold: { 1: CONFIG.startGold, 2: CONFIG.startGold + CONFIG.secondPlayerBonus },
     spawnsLeft: 0, seenBase: { 1: null, 2: null }, pings: { 1: [], 2: [] },
-    news: { 1: [], 2: [] }, report: { 1: [], 2: [] }, log: { 1: [], 2: [] }, winner: null,
+    feed: { 1: [], 2: [] }, winner: null,
   };
 }
 
@@ -79,7 +87,8 @@ function visibleSet(S, pl) {
 }
 const unitCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "unit").length;
 const baseOf = (S, pl) => S.pieces.find(p => p.owner === pl && p.kind === "base");
-const incomeFor = (gold) => CONFIG.baseIncome + CONFIG.interestSteps.filter(t => gold >= t).length;
+const interestFor = (gold) => CONFIG.interestBase + CONFIG.interestSteps.filter(t => gold >= t).length;
+const incomeFor = (gold) => CONFIG.baseIncome + interestFor(gold);
 const defOf = p => p.kind === "base" ? { name: "Base", atk: 0 } : UNITS[p.type];
 const placeZone = (pl, r) => pl === 1 ? r >= N / 2 : r < N / 2;
 
@@ -130,7 +139,7 @@ function computeMoves(S, p, vis) {
 function computeActions(S, p, vis) {
   const out = new Map();
   if (p.kind !== "unit" || p.acted || p.fresh) return out;
-  const d = UNITS[p.type], a = d.attack;
+  const d = UNITS[p.type], a = d.attack || { type: "none" };
   const enemy = (r, c) => { const q = pieceAt(S, r, c); return q && q.owner !== p.owner && vis.has(key(r, c)); };
   const add = (r, c, kind) => out.set(key(r, c), { kind, r, c });
   if (a.type === "melee" || a.type === "cleave") {
@@ -164,6 +173,12 @@ function spawnTiles(S, pl) {
 }
 
 /* ---------- state changes (server only) ---------- */
+// Battle feed: kind is "you" (your actions), "enemy" (things done to you) or "turn" (turn markers).
+function say(S, pl, kind, text) {
+  const f = S.feed[pl];
+  f.push({ kind, text });
+  if (f.length > 120) f.splice(0, f.length - 120);
+}
 function updateSeen(S) {
   for (const pl of [1, 2]) {
     const eb = baseOf(S, 3 - pl);
@@ -174,27 +189,35 @@ function updateSeen(S) {
 function startTurn(S, pl) {
   S.current = pl;
   if (pl === 1) S.turn++;
-  const inc = incomeFor(S.gold[pl]);
+  const inc = S.turn === 1 ? 0 : incomeFor(S.gold[pl]);
   S.gold[pl] += inc;
-  for (const p of S.pieces) if (p.owner === pl) { p.moved = false; p.acted = false; p.fresh = false; }
+  for (const p of S.pieces) if (p.owner === pl) { p.moved = false; p.acted = false; p.fresh = false; p.used = 0; }
   S.spawnsLeft = CONFIG.spawnsPerTurn;
-  S.log[pl] = [`Turn ${S.turn}: collected ${inc} gold.`];
-  S.report[pl] = S.news[pl];
-  S.news[pl] = [];
+  for (const p of [1, 2]) say(S, p, "turn", `Turn ${S.turn} · ${p === pl ? "Your turn" : "Enemy's turn"}`);
+  say(S, pl, "you", S.turn === 1 ? `You start with ${S.gold[pl]} gold.` : `Collected ${inc} gold (${CONFIG.baseIncome} + ${inc - CONFIG.baseIncome} interest).`);
 }
 
 function damage(S, target, amt, attacker) {
-  const victim = target.owner, an = UNITS[attacker.type].name, tn = defOf(target).name;
+  const victim = target.owner;
+  // only name a unit if the other side can actually see it right now
+  const attackerSeen = visibleSet(S, victim).has(key(attacker.r, attacker.c));
+  const targetSeen = visibleSet(S, attacker.owner).has(key(target.r, target.c));
+  const an = UNITS[attacker.type].name, tn = defOf(target).name;
+  const theirAttacker = attackerSeen ? `an enemy ${an}` : "an unseen enemy";
+  const theirTarget = targetSeen ? `an enemy ${tn}` : "an unseen enemy";
   target.hp -= amt;
-  if (!visibleSet(S, victim).has(key(attacker.r, attacker.c))) S.pings[victim].push({ r: attacker.r, c: attacker.c });
   if (target.hp <= 0) {
     S.pieces = S.pieces.filter(q => q !== target);
-    S.log[attacker.owner].push(`Your ${an} destroyed an enemy ${tn}.`);
-    S.news[victim].push(`Your ${tn} was destroyed by an enemy ${an}.`);
-    if (target.kind === "base") S.winner = attacker.owner;
+    say(S, attacker.owner, "you", `Your ${an} destroyed ${theirTarget}.`);
+    say(S, victim, "enemy", `Your ${tn} was destroyed by ${theirAttacker}.`);
+    if (target.kind === "base") {
+      S.winner = attacker.owner;
+      say(S, attacker.owner, "turn", "Victory! The enemy base has fallen.");
+      say(S, victim, "turn", "Defeat. Your base has fallen.");
+    }
   } else {
-    S.log[attacker.owner].push(`Your ${an} hit an enemy ${tn} for ${amt}.`);
-    S.news[victim].push(`Your ${tn} took ${amt} damage from an enemy ${an} (${target.hp} HP left).`);
+    say(S, attacker.owner, "you", `Your ${an} hit ${theirTarget} for ${amt}.`);
+    say(S, victim, "enemy", `Your ${tn} took ${amt} damage from ${theirAttacker} (${target.hp} HP left).`);
   }
 }
 
@@ -207,6 +230,7 @@ function apply(S, pl, cmd) {
     const { r, c } = cmd;
     if (!Number.isInteger(r) || !Number.isInteger(c) || !inB(r, c) || !placeZone(pl, r) || pieceAt(S, r, c)) return "Place your base in your own half.";
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "base", type: "base", r, c, hp: CONFIG.baseHp, maxHp: CONFIG.baseHp });
+    say(S, pl, "you", "You placed your base.");
     if (baseOf(S, 1) && baseOf(S, 2)) { S.phase = "play"; startTurn(S, 1); }
     return null;
   }
@@ -228,7 +252,7 @@ function apply(S, pl, cmd) {
     if (!spawnTiles(S, pl).has(key(cmd.r, cmd.c))) return "Recruit next to your base on an empty square.";
     S.gold[pl] -= d.cost; S.spawnsLeft--;
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "unit", type: cmd.unit, r: cmd.r, c: cmd.c, hp: d.hp, maxHp: d.hp, moved: true, acted: true, fresh: true });
-    S.log[pl].push(`Recruited a ${d.name} for ${d.cost} gold.`);
+    say(S, pl, "you", `Recruited a ${d.name} for ${d.cost} gold.`);
     updateSeen(S);
     return null;
   }
@@ -244,23 +268,23 @@ function apply(S, pl, cmd) {
     if (last) { p.r = last[0]; p.c = last[1]; }
     p.moved = true;
     if (blocker) {
-      S.log[pl].push(`Your ${nm} ran into a hidden enemy and stopped short.`);
-      S.pings[pl].push({ r: blocker.r, c: blocker.c });
-      S.news[blocker.owner].push(`An enemy ${nm} bumped into your ${defOf(blocker).name}.`);
-      S.pings[blocker.owner].push({ r: p.r, c: p.c });
-    } else S.log[pl].push(`Moved ${nm}.`);
+      say(S, pl, "you", `Your ${nm} ran into a hidden enemy and stopped short.`);
+      const moverSeen = visibleSet(S, blocker.owner).has(key(p.r, p.c));
+      say(S, blocker.owner, "enemy", `${moverSeen ? `An enemy ${nm}` : "An unseen enemy"} bumped into your ${defOf(blocker).name}.`);
+    } else say(S, pl, "you", `Moved ${nm}.`);
     updateSeen(S);
     return null;
   }
   if (cmd.type === "act") {
     const act = computeActions(S, p, vis).get(key(cmd.r, cmd.c));
     if (!act) return "No valid target there.";
-    const d = UNITS[p.type], a = d.attack;
-    p.acted = true;
+    const d = UNITS[p.type], a = d.attack || { type: "none" };
+    p.used = (p.used || 0) + 1;
+    p.acted = p.used >= (d.attacks || 1);
     if (act.kind === "heal") {
       const q = pieceAt(S, act.r, act.c), before = q.hp;
       q.hp = Math.min(q.maxHp, q.hp + d.heal.amount);
-      S.log[pl].push(`${d.name} healed ${UNITS[q.type].name} for ${q.hp - before}.`);
+      say(S, pl, "you", `${d.name} healed ${UNITS[q.type].name} for ${q.hp - before}.`);
       return null;
     }
     const targets = [];
@@ -295,12 +319,12 @@ function viewFor(S, pl) {
     youPlaced: !!baseOf(S, pl),
     pieces: S.pieces.filter(p => reveal || p.owner === pl || vis.has(key(p.r, p.c))),
     seenBase: S.seenBase[pl] && eb ? S.seenBase[pl] : null,
-    pings: S.pings[pl], log: S.log[pl], news: S.news[pl], report: S.report[pl],
+    pings: S.pings[pl], feed: S.feed[pl],
     reveal,
   };
 }
 
-const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor,
+const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
   placeZone, computeMoves, computeActions, spawnTiles, apply, viewFor };
 if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fogline = api;
 })(typeof window !== "undefined" ? window : globalThis);

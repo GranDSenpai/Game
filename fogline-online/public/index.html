@@ -75,10 +75,12 @@ button, input { font: inherit; color: inherit; }
 .stats { display: flex; gap: 14px; font-family: var(--font-mono); font-size: .85rem; flex-wrap: wrap; }
 .stats b { color: var(--gold); font-weight: 600; }
 .status { font-size: .85rem; color: var(--muted); }
-.log { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; font-size: .86rem; }
-.log div { color: var(--muted); }
-.log div:last-child { color: var(--ink); }
-.news div { font-size: .9rem; }
+.feed { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .88rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; scroll-behavior: auto; }
+.feed .you { color: var(--ink); }
+.feed .enemy { color: var(--danger); }
+.feed .turn { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.feed .turn:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.feed .empty { color: var(--muted); }
 .rules-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: .88rem; display: flex; flex-direction: column; gap: 3px; }
 .rules-list b { color: var(--ink); }
 details summary { cursor: pointer; font-weight: 700; }
@@ -144,8 +146,8 @@ const toastEl = document.getElementById("toast");
 let toastTimer;
 function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.hidden = true, 3200); }
 const tokenKey = code => "fogline-token-" + code;
-function getToken(code) { try { return localStorage.getItem(tokenKey(code)); } catch { return null; } }
-function setToken(code, t) { try { localStorage.setItem(tokenKey(code), t); } catch {} }
+function getToken(code) { try { return sessionStorage.getItem(tokenKey(code)); } catch { return null; } }
+function setToken(code, t) { try { sessionStorage.setItem(tokenKey(code), t); } catch {} }
 
 function connect(first) {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
@@ -316,7 +318,7 @@ function drawPiece(p, cs, alpha) {
   } else {
     const d = UNITS[p.type];
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy - cs * .04, cs * .34, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = TIER[d.cost][1]; ctx.lineWidth = Math.max(1.5, cs * .075); ctx.stroke();
+    ctx.strokeStyle = TIER[d.tier][1]; ctx.lineWidth = Math.max(1.5, cs * .075); ctx.stroke();
     ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .3}px "Alegreya Sans", sans-serif`; ctx.fillText(d.abbr, cx, cy - cs * .02);
   }
   const bw = cs * .76, bh = Math.max(2.5, cs * .085), bx = cx - bw / 2, by = y + cs * .86, ratio = Math.max(0, p.hp / p.maxHp);
@@ -337,7 +339,8 @@ function attackText(a) {
     knight: "strikes L-shaped squares", blast: `blasts a 3×3 area within ${a.range}` }[a.type];
 }
 function unitDesc(d) {
-  let s = `${moveText(d.move)}; ${attackText(d.attack)}.`;
+  let s = `${moveText(d.move)}; ${d.attack ? attackText(d.attack) : "can't attack"}.`;
+  if ((d.attacks || 1) > 1) s += ` Attacks ${d.attacks} times per turn.`;
   if (d.heal) s += ` Can heal an ally ${d.heal.amount} within ${d.heal.range} instead.`;
   if (d.siege) s += ` ×${d.siege} damage to bases.`;
   if (d.vision) s += ` Sees ${d.vision}.`;
@@ -345,7 +348,21 @@ function unitDesc(d) {
 }
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 
+function feedBlock() {
+  const items = (V.feed || []).map(f => `<div class="${f.kind}">${esc(f.text)}</div>`).join("");
+  return `<div class="block"><div class="label">Battle feed</div><div class="feed" id="feed" aria-live="polite">${items || '<div class="empty">Nothing has happened yet.</div>'}</div></div>`;
+}
+// keep the feed pinned to the newest line unless the player has scrolled up to read
+function captureFeed() {
+  const f = document.getElementById("feed");
+  return f ? { top: f.scrollTop, atBottom: f.scrollHeight - f.scrollTop - f.clientHeight < 24 } : null;
+}
+function restoreFeed(s) {
+  const f = document.getElementById("feed"); if (!f) return;
+  f.scrollTop = !s || s.atBottom ? f.scrollHeight : s.top;
+}
 function render() {
+  const feedScroll = captureFeed();
   draw();
   if (!V) return;
   const pl = V.you, pc = colorOf(pl);
@@ -376,22 +393,23 @@ function render() {
     <div class="status">Send this link. The first person to open it joins as Player 2. You can place your base while you wait.</div></div>` : "";
 
   if (V.phase === "place") {
-    panel.innerHTML = header + invite + `<div class="block"><p class="status" style="margin:0">Your base reveals ${CONFIG.baseVision} squares around it and starts with ${CONFIG.baseHp} HP. Recruits appear within ${CONFIG.spawnRadius} squares of it. Player 1 builds in the bottom half, Player 2 in the top.</p></div>` + rulesBlock();
+    panel.innerHTML = header + invite + feedBlock() + `<div class="block"><p class="status" style="margin:0">Your base reveals ${CONFIG.baseVision} squares around it and starts with ${CONFIG.baseHp} HP. Recruits appear within ${CONFIG.spawnRadius} squares of it. Player 1 builds in the bottom half, Player 2 in the top.</p></div>` + rulesBlock();
+    restoreFeed(feedScroll);
     return;
   }
 
   const gold = V.gold, next = G.incomeFor(gold), maxT = CONFIG.interestSteps[CONFIG.interestSteps.length - 1] + 2;
   const ticks = CONFIG.interestSteps.map(t => `<div class="tick" style="left:${t / maxT * 100}%"></div>`).join("");
-  const tickLabels = CONFIG.interestSteps.map((t, i) => `<span style="left:${t / maxT * 100}%">${t}g → +${CONFIG.baseIncome + i + 1}</span>`).join("");
+  const tickLabels = CONFIG.interestSteps.map(t => `<span style="left:${t / maxT * 100}%">${t}g → +${G.incomeFor(t)}</span>`).join("");
 
   let tiers = "";
   for (let t = 1; t <= 5; t++) {
-    const list = Object.entries(UNITS).filter(([, d]) => d.cost === t);
+    const list = Object.entries(UNITS).filter(([, d]) => d.tier === t);
     if (!list.length) continue;
-    tiers += `<div class="tier"><div class="tier-name" style="color:${TIER[t][1]}">${t}-cost · ${TIER[t][0]}</div>` +
+    tiers += `<div class="tier"><div class="tier-name" style="color:${TIER[t][1]}">Tier ${t} · ${TIER[t][0]} · ${list[0][1].cost} gold</div>` +
       list.map(([id, d]) => `<button class="recruit${ui.shop === id ? " active" : ""}" data-buy="${id}" ${canRecruit(id) ? "" : "disabled"}>
         <span class="chip" style="background:${pc};border-color:${TIER[t][1]}">${d.abbr}</span>
-        <span class="nm">${d.name} <span class="status">· ${d.hp} HP · ${d.atk} ATK</span></span>
+        <span class="nm">${d.name} <span class="status">· ${d.hp} HP${d.attack ? ` · ${d.atk} ATK` : ` · heals ${d.heal.amount}`}</span></span>
         <span class="cost">${d.cost}g</span><span class="desc">${unitDesc(d)}</span></button>`).join("") + `</div>`;
   }
 
@@ -405,37 +423,35 @@ function render() {
         <div class="status">${mine ? "Recruit from the list below. Lose this and you lose the game." : "Destroy it to win. Siege units deal bonus damage here."}</div></div>`;
     } else {
       const d = UNITS[shown.type];
-      const st = !mine ? "Enemy unit." : shown.fresh ? "Just recruited. Ready next turn." : shown.moved && shown.acted ? "Done for this turn." : `${shown.moved ? "Moved" : "Can move"} · ${shown.acted ? "Acted" : "Can act"}`;
-      card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.cost][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">${d.cost}-cost</span></div>
+      const left = (UNITS[shown.type].attacks || 1) - (shown.used || 0);
+      const st = !mine ? "Enemy unit." : shown.fresh ? "Just recruited. Ready next turn." : shown.moved && shown.acted ? "Done for this turn." : `${shown.moved ? "Moved" : "Can move"} · ${shown.acted ? "Acted" : left > 1 ? `${left} attacks left` : "Can act"}`;
+      card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
         <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>ATK <b>${d.atk}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
         <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div></div>`;
     }
   }
 
-  const report = myTurn() && V.report.length ? `<div class="block news"><div class="label">Last enemy turn</div>${V.report.map(n => `<div>${esc(n)}</div>`).join("")}</div>` : "";
-  const live = !myTurn() && !V.winner && V.news.length ? `<div class="block news"><div class="label">Enemy activity this turn</div>${V.news.map(n => `<div>${esc(n)}</div>`).join("")}</div>` : "";
   const over = V.winner ? `<div class="block"><div class="card-title"><strong>${V.winner === pl ? "Victory" : "Defeat"}</strong></div><button class="btn primary" data-act="rematch">Rematch</button></div>` : "";
 
-  panel.innerHTML = header + invite + over + report + live + `
+  panel.innerHTML = header + invite + over + feedBlock() + `
     <div class="block"><div class="treasury">
       <div class="gold-num">${gold}g</div>
-      <div class="gold-sub">Next turn <b>+${next}</b><br>Hold ${CONFIG.interestSteps.join(" / ")} gold for more income</div>
+      <div class="gold-sub">Next turn <b>+${next}</b> (${CONFIG.baseIncome} + ${G.interestFor(gold)} interest)<br>Hold ${CONFIG.interestSteps.join(" / ")} gold for more interest</div>
       <div class="interest"><div class="fill" style="width:${Math.min(100, gold / maxT * 100)}%"></div>${ticks}</div>
       <div class="interest-labels">${tickLabels}</div></div></div>
     ${card}
     <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${CONFIG.spawnsPerTurn ? V.spawnsLeft + " recruits left · " : ""}${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div>${tiers}</div>
-    <div class="block"><div class="label">Your log</div><div class="log">${V.log.map(l => `<div>${esc(l)}</div>`).join("")}</div></div>
     ${rulesBlock()}`;
-  const lg = panel.querySelector(".log"); if (lg) lg.scrollTop = lg.scrollHeight;
+  restoreFeed(feedScroll);
 }
 function rulesBlock() {
   return `<div class="block"><details><summary>How to play</summary><ul class="rules-list">
     <li>Both players place a base in their own half. Player 1 moves first.</li>
-    <li>Every turn you earn <b>${CONFIG.baseIncome} gold</b>, plus 1 more for each threshold (<b>${CONFIG.interestSteps.join(", ")}</b> gold) you're holding. Spend now to rush, or save to scale.</li>
+    <li>Both players start with <b>${CONFIG.startGold} gold</b> and get nothing on turn 1. From turn 2 you earn <b>${CONFIG.baseIncome} gold</b> plus 1 interest at each of <b>${CONFIG.interestSteps.join(", ")}</b> gold you're holding. Spend now to rush, or save to scale.</li>
     <li>Recruit ${CONFIG.spawnsPerTurn ? `up to <b>${CONFIG.spawnsPerTurn}</b> units` : "as many units as you can afford"} each turn near your base (max ${CONFIG.maxUnits} on the board). New units act next turn.</li>
     <li>Each unit can move once and attack (or heal) once per turn, in either order.</li>
-    <li>You only see squares near your units and base. Red crosshairs mark where unseen attackers hit you from.</li>
-    <li>Moving into a hidden enemy stops you short and reveals the contact.</li>
+    <li>You only see squares near your units and base. Enemies outside your vision are never shown, even when they hit you.</li>
+    <li>Moving into a hidden enemy stops you short.</li>
     <li>Destroy the enemy base to win.</li></ul></details></div>`;
 }
 

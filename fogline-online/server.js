@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
   if (!full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); return res.end("Not found"); }
-    res.writeHead(200, { "Content-Type": TYPES[path.extname(full)] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type": TYPES[path.extname(full)] || "application/octet-stream", "Cache-Control": "no-cache" });
     res.end(data);
   });
 });
