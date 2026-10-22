@@ -10,14 +10,14 @@ const CONFIG = {
   boardSize: 20,          // board is boardSize x boardSize
   startGold: 2,           // gold before your first turn's income
   secondPlayerBonus: 1,   // extra starting gold for player 2
-  baseIncome: 1,          // gold every turn
-  interestSteps: [5, 10], // +1 income for each threshold you hold at turn start
+  baseIncome: 2,              // gold every turn
+  interestSteps: [4, 8, 12],  // +1 income for each threshold you hold at turn start
   baseHp: 25,
   baseVision: 4,          // squares the base reveals (any direction)
   unitVision: 3,          // default squares a unit reveals
   spawnRadius: 2,         // how far from your base you can place recruits
-  spawnsPerTurn: 1,       // recruits per turn
-  maxUnits: 8,            // units on the board at once
+  spawnsPerTurn: 0,       // recruits per turn (0 = no limit)
+  maxUnits: 20,           // units on the board at once
 };
 
 /* Move types:   step (walks around obstacles), rook, bishop, queen (slide in lines, blocked),
@@ -27,19 +27,19 @@ const CONFIG = {
                  blast (3x3 area centred on an enemy within range).
    heal: optional, used instead of attacking. siege: damage multiplier vs bases. */
 const UNITS = {
-  footman:   { name: "Footman",   abbr: "Ft", cost: 1, hp: 4,  atk: 1, move: { type: "step", range: 1 }, attack: { type: "melee" } },
+  footman:   { name: "Footman",   abbr: "Ft", cost: 1, hp: 4,  atk: 1, move: { type: "step", range: 2 }, attack: { type: "melee" } },
   slinger:   { name: "Slinger",   abbr: "Sl", cost: 1, hp: 3,  atk: 1, move: { type: "step", range: 1 }, attack: { type: "ranged", range: 2 } },
   scout:     { name: "Scout",     abbr: "Sc", cost: 1, hp: 3,  atk: 1, move: { type: "rook", range: 3 }, attack: { type: "melee" }, vision: 5 },
   spearman:  { name: "Spearman",  abbr: "Sp", cost: 2, hp: 6,  atk: 2, move: { type: "step", range: 1 }, attack: { type: "line", dirs: "rook", range: 2 } },
   rider:     { name: "Rider",     abbr: "Rd", cost: 2, hp: 5,  atk: 2, move: { type: "knight" },         attack: { type: "melee" } },
-  acolyte:   { name: "Acolyte",   abbr: "Ac", cost: 2, hp: 4,  atk: 1, move: { type: "step", range: 1 }, attack: { type: "melee" }, heal: { amount: 2, range: 2 } },
+  acolyte:   { name: "Acolyte",   abbr: "Ac", cost: 2, hp: 4,  atk: 1, move: { type: "step", range: 2 }, attack: { type: "melee" }, heal: { amount: 2, range: 2 } },
   berserker: { name: "Berserker", abbr: "Bz", cost: 3, hp: 8,  atk: 2, move: { type: "step", range: 2 }, attack: { type: "cleave" } },
   ballista:  { name: "Ballista",  abbr: "Bl", cost: 3, hp: 5,  atk: 3, move: { type: "step", range: 1 }, attack: { type: "line", dirs: "rook", range: 6 }, siege: 2 },
   hexer:     { name: "Hexer",     abbr: "Hx", cost: 3, hp: 5,  atk: 3, move: { type: "bishop", range: 3 }, attack: { type: "line", dirs: "bishop", range: 4 } },
-  warden:    { name: "Warden",    abbr: "Wd", cost: 4, hp: 15, atk: 2, move: { type: "step", range: 1 }, attack: { type: "cleave" } },
+  warden:    { name: "Warden",    abbr: "Wd", cost: 4, hp: 15, atk: 2, move: { type: "step", range: 2 }, attack: { type: "cleave" } },
   pyromancer:{ name: "Pyromancer",abbr: "Py", cost: 4, hp: 6,  atk: 3, move: { type: "step", range: 1 }, attack: { type: "blast", range: 3 } },
   assassin:  { name: "Assassin",  abbr: "As", cost: 4, hp: 6,  atk: 5, move: { type: "queen", range: 4 }, attack: { type: "knight" }, vision: 4 },
-  titan:     { name: "Titan",     abbr: "Ti", cost: 5, hp: 22, atk: 4, move: { type: "step", range: 1 }, attack: { type: "cleave" }, siege: 2 },
+  titan:     { name: "Titan",     abbr: "Ti", cost: 5, hp: 22, atk: 4, move: { type: "step", range: 2 }, attack: { type: "cleave" }, siege: 2 },
   dragon:    { name: "Dragon",    abbr: "Dr", cost: 5, hp: 14, atk: 4, move: { type: "fly", range: 4 },  attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
   archmage:  { name: "Archmage",  abbr: "Am", cost: 5, hp: 8,  atk: 4, move: { type: "step", range: 1 }, attack: { type: "blast", range: 5 }, heal: { amount: 3, range: 3 } },
 };
@@ -223,7 +223,7 @@ function apply(S, pl, cmd) {
     const d = UNITS[cmd.unit];
     if (!d) return "Unknown unit.";
     if (S.gold[pl] < d.cost) return "Not enough gold.";
-    if (S.spawnsLeft <= 0) return "No recruits left this turn.";
+    if (CONFIG.spawnsPerTurn && S.spawnsLeft <= 0) return "No recruits left this turn.";
     if (unitCount(S, pl) >= CONFIG.maxUnits) return "Unit limit reached.";
     if (!spawnTiles(S, pl).has(key(cmd.r, cmd.c))) return "Recruit next to your base on an empty square.";
     S.gold[pl] -= d.cost; S.spawnsLeft--;
