@@ -17,6 +17,9 @@ const CONFIG = {
   baseVision: 4,          // squares the base reveals (any direction)
   unitVision: 3,          // default squares a unit reveals
   spawnRadius: 2,         // how far from your base you can place recruits
+  wardHp: 5,              // Scout wards
+  wardVision: 4,
+  maxWards: 3,            // wards each player can have on the board at once
   spawnsPerTurn: 0,       // recruits per turn (0 = no limit)
   maxUnits: 20,           // units on the board at once
 };
@@ -25,31 +28,33 @@ const CONFIG = {
                  knight (L-jump over anything), fly (lands anywhere within range).
    Attack types: melee (one adjacent), cleave (all adjacent enemies), ranged (any within range),
                  line (first piece along rook/bishop/queen lines), knight (L squares),
-                 blast (3x3 area centred on an enemy within range).
+                 blast (3x3 area centred on an enemy within range),
+                 aura (hits every enemy within range of the unit itself).
    attack: null means the unit can't attack. attacks: how many attacks per turn (default 1).
    tier: groups units in the shop and sets their ring colour; cost is what you pay.
+   ward: the unit can place a ward (a stationary lookout) instead of attacking.
    heal: optional, used instead of attacking. siege: damage multiplier vs bases. */
 const UNITS = {
   // Tier 1
-  scout:     { name: "Scout",      abbr: "Sc", tier: 1, cost: 1, hp: 3,  atk: 1,  move: { type: "queen", range: 3 },  attack: { type: "melee" }, vision: 5 },
+  scout:     { name: "Scout",      abbr: "Sc", tier: 1, cost: 1, hp: 3,  atk: 1,  move: { type: "queen", range: 3 },  attack: { type: "melee" }, vision: 5, ward: true },
   slinger:   { name: "Slinger",    abbr: "Sl", tier: 1, cost: 1, hp: 3,  atk: 2,  move: { type: "queen", range: 2 },  attack: { type: "ranged", range: 3 } },
-  footman:   { name: "Footman",    abbr: "Ft", tier: 1, cost: 1, hp: 5,  atk: 4,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
+  footman:   { name: "Footman",    abbr: "Ft", tier: 1, cost: 1, hp: 6,  atk: 3,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
   // Tier 2
   spearman:  { name: "Spearman",   abbr: "Sp", tier: 2, cost: 3, hp: 7,  atk: 4,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
   cavalry:   { name: "Cavalry",    abbr: "Cv", tier: 2, cost: 3, hp: 5,  atk: 5,  move: { type: "rook", range: 4 },   attack: { type: "melee" } },
-  healer:    { name: "Healer",     abbr: "He", tier: 2, cost: 3, hp: 4,  atk: 0,  move: { type: "step", range: 2 },   attack: null, heal: { amount: 5, range: 2 } },
+  healer:    { name: "Healer",     abbr: "He", tier: 2, cost: 3, hp: 3,  atk: 0,  move: { type: "step", range: 2 },   attack: null, heal: { amount: 5, range: 2 } },
   // Tier 3
   berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 8, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
   ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 5, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
-  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 } },
+  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 }, vision: 4 },
   // Tier 4
   warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
-  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 } },
-  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 }, vision: 6 },
+  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 3 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
   // Tier 5
   titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
-  dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
-  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "blast", range: 5 } },
+  dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 2 } },
+  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 4,  move: { type: "step", range: 1 },   attack: { type: "aura", range: 4 } },
 };
 const TIER = { 1: ["Common", "#9ea7a3"], 2: ["Uncommon", "#5fb46a"], 3: ["Rare", "#4f8fd9"], 4: ["Epic", "#a96ddc"], 5: ["Legendary", "#e3b23c"] };
 
@@ -76,7 +81,7 @@ function newGame() {
 /* ---------- queries (work on full state or on a player's view) ---------- */
 const pieceAt = (S, r, c) => S.pieces.find(p => p.r === r && p.c === c);
 const byId = (S, id) => S.pieces.find(p => p.id === id);
-const visionOf = p => p.kind === "base" ? CONFIG.baseVision : (UNITS[p.type].vision ?? CONFIG.unitVision);
+const visionOf = p => p.kind === "base" ? CONFIG.baseVision : p.kind === "ward" ? CONFIG.wardVision : (UNITS[p.type].vision ?? CONFIG.unitVision);
 function visibleSet(S, pl) {
   const s = new Set();
   for (const p of S.pieces) if (p.owner === pl) {
@@ -89,7 +94,15 @@ const unitCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "
 const baseOf = (S, pl) => S.pieces.find(p => p.owner === pl && p.kind === "base");
 const interestFor = (gold) => CONFIG.interestBase + CONFIG.interestSteps.filter(t => gold >= t).length;
 const incomeFor = (gold) => CONFIG.baseIncome + interestFor(gold);
-const defOf = p => p.kind === "base" ? { name: "Base", atk: 0 } : UNITS[p.type];
+const defOf = p => p.kind === "base" ? { name: "Base", atk: 0 } : p.kind === "ward" ? { name: "Ward", atk: 0 } : UNITS[p.type];
+const wardCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "ward").length;
+// empty squares next to a ward-capable unit that can still act
+function wardTiles(S, p) {
+  const s = new Set();
+  if (p.kind !== "unit" || !UNITS[p.type].ward || p.acted || p.moved || p.fresh || wardCount(S, p.owner) >= CONFIG.maxWards) return s;
+  for (const [dr, dc] of KING) { const r = p.r + dr, c = p.c + dc; if (inB(r, c) && !pieceAt(S, r, c)) s.add(key(r, c)); }
+  return s;
+}
 const placeZone = (pl, r) => pl === 1 ? r >= N / 2 : r < N / 2;
 
 function knownBlocked(S, r, c, pl, vis) {
@@ -145,7 +158,7 @@ function computeActions(S, p, vis) {
   const add = (r, c, kind) => out.set(key(r, c), { kind, r, c });
   if (a.type === "melee" || a.type === "cleave") {
     for (const [dr, dc] of KING) { const r = p.r + dr, c = p.c + dc; if (inB(r, c) && enemy(r, c)) add(r, c, "attack"); }
-  } else if (a.type === "ranged" || a.type === "blast") {
+  } else if (a.type === "ranged" || a.type === "blast" || a.type === "aura") {
     for (let r = p.r - a.range; r <= p.r + a.range; r++) for (let c = p.c - a.range; c <= p.c + a.range; c++)
       if (inB(r, c) && enemy(r, c)) add(r, c, "attack");
   } else if (a.type === "knight") {
@@ -172,7 +185,7 @@ function attackArea(S, p, vis) {
   const square = (R) => { for (let r = p.r - R; r <= p.r + R; r++) for (let c = p.c - R; c <= p.c + R; c++) if (inB(r, c) && !(r === p.r && c === p.c)) tiles.add(key(r, c)); };
   if (!a) { if (d.heal) square(d.heal.range); return { tiles, kind: "heal" }; }
   if (a.type === "melee" || a.type === "cleave") square(1);
-  else if (a.type === "ranged" || a.type === "blast") square(a.range);
+  else if (a.type === "ranged" || a.type === "blast" || a.type === "aura") square(a.range);
   else if (a.type === "knight") { for (const [dr, dc] of KNIGHT) if (inB(p.r + dr, p.c + dc)) tiles.add(key(p.r + dr, p.c + dc)); }
   else if (a.type === "line") {
     for (const [dr, dc] of DIRS[a.dirs]) for (let i = 1; i <= a.range; i++) {
@@ -297,6 +310,20 @@ function apply(S, pl, cmd) {
     updateSeen(S);
     return null;
   }
+  if (cmd.type === "ward") {
+    const d = UNITS[p.type];
+    if (!d.ward) return "Only Scouts can place wards.";
+    if (p.acted || p.fresh) return "That Scout has already acted this turn.";
+    if (p.moved) return "A Scout can't move and place a ward in the same turn.";
+    if (wardCount(S, pl) >= CONFIG.maxWards) return `You can only have ${CONFIG.maxWards} wards at once.`;
+    if (!Number.isInteger(cmd.r) || !Number.isInteger(cmd.c) || !inB(cmd.r, cmd.c) || Math.max(Math.abs(cmd.r - p.r), Math.abs(cmd.c - p.c)) !== 1) return "Place the ward next to the Scout.";
+    if (pieceAt(S, cmd.r, cmd.c)) return "Something is already on that square.";
+    S.pieces.push({ id: S.nextId++, owner: pl, kind: "ward", type: "ward", r: cmd.r, c: cmd.c, hp: CONFIG.wardHp, maxHp: CONFIG.wardHp });
+    p.used = (p.used || 0) + 1; p.acted = true; p.moved = true;   // placing a ward is the Scout's whole turn
+    say(S, pl, "you", `Your Scout placed a ward (${wardCount(S, pl)}/${CONFIG.maxWards}).`);
+    updateSeen(S);
+    return null;
+  }
   if (cmd.type === "act") {
     const act = computeActions(S, p, vis).get(key(cmd.r, cmd.c));
     if (!act) return "No valid target there.";
@@ -310,7 +337,9 @@ function apply(S, pl, cmd) {
       return null;
     }
     const targets = [];
-    if (a.type === "cleave") {
+    if (a.type === "aura") {
+      for (const q of S.pieces) if (q.owner !== pl && Math.max(Math.abs(q.r - p.r), Math.abs(q.c - p.c)) <= a.range) targets.push(q);
+    } else if (a.type === "cleave") {
       for (const [dr, dc] of KING) { const q = pieceAt(S, p.r + dr, p.c + dc); if (q && q.owner !== pl) targets.push(q); }
     } else if (a.type === "blast") {
       for (const [dr, dc] of KING.concat([[0, 0]])) { const q = pieceAt(S, act.r + dr, act.c + dc); if (q && q.owner !== pl) targets.push(q); }
@@ -347,6 +376,6 @@ function viewFor(S, pl) {
 }
 
 const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
-  placeZone, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor };
+  placeZone, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor, visionOf, wardTiles, wardCount };
 if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fogline = api;
 })(typeof window !== "undefined" ? window : globalThis);
