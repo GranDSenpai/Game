@@ -8,12 +8,12 @@
    ===================================================================== */
 const CONFIG = {
   boardSize: 20,          // board is boardSize x boardSize
-  startGold: 3,               // both players start with this; no income on turn 1
+  startGold: 12,               // both players start with this; no income on turn 1
   secondPlayerBonus: 0,       // extra starting gold for player 2
   baseIncome: 2,              // gold every turn from turn 2
   interestBase: 0,            // interest you always get (holding 0 gold)
   interestSteps: [4, 8, 12, 16], // +1 more interest for each threshold you hold at turn start
-  baseHp: 150,
+  baseHp: 30,
   baseVision: 4,          // squares the base reveals (any direction)
   unitVision: 3,          // default squares a unit reveals
   spawnRadius: 2,         // how far from your base you can place recruits
@@ -45,7 +45,7 @@ const UNITS = {
   // Tier 4
   warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
   sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 } },
-  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 4,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
+  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
   // Tier 5
   titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
   dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },

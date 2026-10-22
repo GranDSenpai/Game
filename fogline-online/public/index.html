@@ -58,6 +58,16 @@ button, input { font: inherit; color: inherit; }
 .interest .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); opacity: .6; }
 .interest-labels { grid-column: 1 / -1; font-family: var(--font-mono); font-size: .72rem; color: var(--muted); position: relative; height: 14px; }
 .interest-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.shop { display: flex; flex-direction: column; gap: 5px; }
+.tier-row { display: grid; grid-template-columns: 30px repeat(3, minmax(0, 1fr)); gap: 5px; }
+.tier-tag { display: grid; place-items: center; font-family: var(--font-mono); font-weight: 600; font-size: .78rem; }
+.rc { min-width: 0; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid; border-radius: 5px; padding: 4px 7px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.rc:hover:not(:disabled) { border-color: var(--muted); }
+.rc.active { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+.rc:disabled { opacity: .4; cursor: not-allowed; }
+.rc:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.rc-name { font-weight: 800; font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-stats { font-size: .7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .recruit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .recruit-head .meta { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); }
 .tier { display: flex; flex-direction: column; gap: 6px; }
@@ -80,7 +90,7 @@ button, input { font: inherit; color: inherit; }
 .ov .key { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .ov[aria-pressed="false"] .key { opacity: .3; }
 .status { font-size: .85rem; color: var(--muted); }
-.feed { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .88rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; scroll-behavior: auto; }
+.feed { height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .88rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; scroll-behavior: auto; }
 .feed .you { color: var(--ink); }
 .feed .enemy { color: var(--danger); }
 .feed .turn { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
@@ -469,11 +479,9 @@ function render() {
   for (let t = 1; t <= 5; t++) {
     const list = Object.entries(UNITS).filter(([, d]) => d.tier === t);
     if (!list.length) continue;
-    tiers += `<div class="tier"><div class="tier-name" style="color:${TIER[t][1]}">Tier ${t} · ${TIER[t][0]} · ${list[0][1].cost} gold</div>` +
-      list.map(([id, d]) => `<button class="recruit${ui.shop === id ? " active" : ""}" data-buy="${id}" ${canRecruit(id) ? "" : "disabled"}>
-        <span class="chip" style="background:${pc};border-color:${TIER[t][1]}">${d.abbr}</span>
-        <span class="nm">${d.name} <span class="status">· ${d.hp} HP${d.attack ? ` · ${d.atk} ATK` : ` · heals ${d.heal.amount}`}</span></span>
-        <span class="cost">${d.cost}g</span><span class="desc">${unitDesc(d)}</span></button>`).join("") + `</div>`;
+    tiers += `<div class="tier-row"><div class="tier-tag" style="color:${TIER[t][1]}" title="Tier ${t} · ${TIER[t][0]}">${list[0][1].cost}g</div>` +
+      list.map(([id, d]) => `<button class="rc${ui.shop === id ? " active" : ""}" data-buy="${id}" title="${esc(unitDesc(d))}" style="border-left-color:${TIER[t][1]}" ${canRecruit(id) ? "" : "disabled"}>
+        <span class="rc-name">${d.name}</span><span class="rc-stats">${d.hp}hp · ${d.attack ? d.atk + "atk" : "heal " + d.heal.amount}</span></button>`).join("") + `</div>`;
   }
 
   let card = "";
@@ -494,18 +502,24 @@ function render() {
         ${overlayToggles(true)}
         <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div></div>`;
     }
+  } else if (ui.shop) {
+    const d = UNITS[ui.shop];
+    card = `<div class="block"><div class="card-title"><span class="chip" style="background:${pc};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
+      <div class="stats"><span>HP <b>${d.hp}</b></span>${d.attack ? `<span>ATK <b>${d.atk}</b></span>` : `<span>Heal <b>${d.heal.amount}</b></span>`}<span>Range <b>${rangeShort(d)}</b></span><span>Move <b>${moveShort(d.move)}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
+      <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">Click a gold square next to your base to place it.</div></div>`;
   }
 
   const over = V.winner ? `<div class="block"><div class="card-title"><strong>${V.winner === pl ? "Victory" : "Defeat"}</strong></div><button class="btn primary" data-act="rematch">Rematch</button></div>` : "";
 
-  panel.innerHTML = header + invite + over + feedBlock() + `
+  panel.innerHTML = header + invite + over + `
     <div class="block"><div class="treasury">
       <div class="gold-num">${gold}g</div>
       <div class="gold-sub">Next turn <b>+${next}</b> (${CONFIG.baseIncome} + ${G.interestFor(gold)} interest)<br>Hold ${CONFIG.interestSteps.join(" / ")} gold for more interest</div>
       <div class="interest"><div class="fill" style="width:${Math.min(100, gold / maxT * 100)}%"></div>${ticks}</div>
       <div class="interest-labels">${tickLabels}</div></div></div>
+    <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${CONFIG.spawnsPerTurn ? V.spawnsLeft + " recruits left · " : ""}${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div><div class="shop">${tiers}</div></div>
     ${card}
-    <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${CONFIG.spawnsPerTurn ? V.spawnsLeft + " recruits left · " : ""}${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div>${tiers}</div>
+    ${feedBlock()}
     ${rulesBlock()}`;
   restoreFeed(feedScroll);
 }
