@@ -39,17 +39,17 @@ const UNITS = {
   cavalry:   { name: "Cavalry",    abbr: "Cv", tier: 2, cost: 3, hp: 5,  atk: 5,  move: { type: "rook", range: 4 },   attack: { type: "melee" } },
   healer:    { name: "Healer",     abbr: "He", tier: 2, cost: 3, hp: 4,  atk: 0,  move: { type: "step", range: 2 },   attack: null, heal: { amount: 5, range: 2 } },
   // Tier 3
-  berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 9, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
-  ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 6, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
-  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 6, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 } },
+  berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 8, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
+  ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 5, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
+  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 } },
   // Tier 4
-  warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 9, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
-  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 9, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 } },
-  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 6, hp: 10, atk: 4,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
+  warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 } },
+  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 4,  move: { type: "queen", range: 5 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
   // Tier 5
-  titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 13, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
-  dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 13, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
-  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 13, hp: 15, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "blast", range: 5 } },
+  titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
+  dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 3 }, vision: 5 },
+  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "blast", range: 5 } },
 };
 const TIER = { 1: ["Common", "#9ea7a3"], 2: ["Uncommon", "#5fb46a"], 3: ["Rare", "#4f8fd9"], 4: ["Epic", "#a96ddc"], 5: ["Legendary", "#e3b23c"] };
 
@@ -97,9 +97,10 @@ function knownBlocked(S, r, c, pl, vis) {
   return !!q && (q.owner === pl || vis.has(key(r, c)));
 }
 
-function computeMoves(S, p, vis) {
+// preview = true ignores whether the unit has already moved (used for the range overlay)
+function computeMoves(S, p, vis, preview) {
   const out = new Map();
-  if (p.kind !== "unit" || p.moved || p.fresh) return out;
+  if (p.kind !== "unit" || (!preview && (p.moved || p.fresh))) return out;
   const m = UNITS[p.type].move;
   if (m.type === "step") {
     const seen = new Set([key(p.r, p.c)]);
@@ -161,6 +162,27 @@ function computeActions(S, p, vis) {
       if (!out.has(key(q.r, q.c))) add(q.r, q.c, "heal");
   }
   return out;
+}
+
+// Every square a unit's attack (or heal) could reach, whether or not anything is there.
+function attackArea(S, p, vis) {
+  const tiles = new Set();
+  if (p.kind !== "unit") return { tiles, kind: "attack" };
+  const d = UNITS[p.type], a = d.attack;
+  const square = (R) => { for (let r = p.r - R; r <= p.r + R; r++) for (let c = p.c - R; c <= p.c + R; c++) if (inB(r, c) && !(r === p.r && c === p.c)) tiles.add(key(r, c)); };
+  if (!a) { if (d.heal) square(d.heal.range); return { tiles, kind: "heal" }; }
+  if (a.type === "melee" || a.type === "cleave") square(1);
+  else if (a.type === "ranged" || a.type === "blast") square(a.range);
+  else if (a.type === "knight") { for (const [dr, dc] of KNIGHT) if (inB(p.r + dr, p.c + dc)) tiles.add(key(p.r + dr, p.c + dc)); }
+  else if (a.type === "line") {
+    for (const [dr, dc] of DIRS[a.dirs]) for (let i = 1; i <= a.range; i++) {
+      const r = p.r + dr * i, c = p.c + dc * i;
+      if (!inB(r, c)) break;
+      tiles.add(key(r, c));
+      if (knownBlocked(S, r, c, p.owner, vis)) break;
+    }
+  }
+  return { tiles, kind: "attack" };
 }
 
 function spawnTiles(S, pl) {
@@ -325,6 +347,6 @@ function viewFor(S, pl) {
 }
 
 const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
-  placeZone, computeMoves, computeActions, spawnTiles, apply, viewFor };
+  placeZone, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor };
 if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fogline = api;
 })(typeof window !== "undefined" ? window : globalThis);

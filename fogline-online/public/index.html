@@ -74,6 +74,11 @@ button, input { font: inherit; color: inherit; }
 .card-title strong { font-family: var(--font-display); font-size: 1.15rem; }
 .stats { display: flex; gap: 14px; font-family: var(--font-mono); font-size: .85rem; flex-wrap: wrap; }
 .stats b { color: var(--gold); font-weight: 600; }
+.overlays { display: flex; gap: 6px; flex-wrap: wrap; }
+.ov { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 8px; font-size: .8rem; font-weight: 700; cursor: pointer; color: var(--muted); }
+.ov[aria-pressed="true"] { color: var(--ink); border-color: var(--muted); }
+.ov .key { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.ov[aria-pressed="false"] .key { opacity: .3; }
 .status { font-size: .85rem; color: var(--muted); }
 .feed { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: .88rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; scroll-behavior: auto; }
 .feed .you { color: var(--ink); }
@@ -137,6 +142,8 @@ let V = null;               // my view from the server
 let opp = "waiting";        // opponent connection status
 let roomCode = null, ws = null, retry = 0, connected = false;
 let ui = { sel: null, shop: null, inspect: null };
+let show = { move: true, range: true, vision: true };   // board overlays for the selected unit
+try { Object.assign(show, JSON.parse(localStorage.getItem("fogline-overlays") || "{}")); } catch {}
 const pname = p => "Player " + p;
 const colorOf = p => p === 1 ? "var(--p1)" : "var(--p2)";
 
@@ -282,6 +289,7 @@ function draw() {
     ctx.fillStyle = theirs; ctx.font = `700 ${cs * .38}px "Alegreya Sans", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("?", sb.c * cs + cs / 2, sb.r * cs + cs / 2);
   }
+  drawOverlays(cs, it);
   for (const p of V.pieces) {
     const spent = p.owner === pl && p.kind === "unit" && myTurn() && (p.fresh || (p.moved && p.acted));
     drawPiece(p, cs, spent ? 0.5 : 1);
@@ -289,8 +297,8 @@ function draw() {
   const selP = ui.sel && G.byId(V, ui.sel);
   for (const k of it.moves.keys()) {
     const r = Math.floor(k / N), c = k % N;
-    ctx.fillStyle = mine + "40"; ctx.fillRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2);
-    ctx.fillStyle = mine; ctx.beginPath(); ctx.arc(c * cs + cs / 2, r * cs + cs / 2, cs * .11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = mine + "26"; ctx.fillRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2);
+    ctx.fillStyle = mine; ctx.beginPath(); ctx.arc(c * cs + cs / 2, r * cs + cs / 2, cs * .13, 0, Math.PI * 2); ctx.fill();
   }
   for (const a of it.acts.values()) {
     ctx.strokeStyle = a.kind === "heal" ? C.heal : C.danger; ctx.lineWidth = Math.max(2, cs * .08);
@@ -304,6 +312,61 @@ function draw() {
     ctx.moveTo(x - cs * .45, y); ctx.lineTo(x - cs * .18, y); ctx.moveTo(x + cs * .18, y); ctx.lineTo(x + cs * .45, y);
     ctx.moveTo(x, y - cs * .45); ctx.lineTo(x, y - cs * .18); ctx.moveTo(x, y + cs * .18); ctx.lineTo(x, y + cs * .45);
     ctx.stroke();
+  }
+}
+function moveShort(m) {
+  return { step: `${m.range} walk`, rook: `${m.range} straight`, bishop: `${m.range} diagonal`, queen: `${m.range} any line`, knight: "L-jump", fly: `${m.range} fly` }[m.type];
+}
+function rangeShort(d) {
+  const a = d.attack;
+  if (!a) return d.heal ? `${d.heal.range} (heal)` : "–";
+  if (a.type === "melee" || a.type === "cleave") return "1";
+  if (a.type === "ranged") return String(a.range);
+  if (a.type === "blast") return `${a.range} (3×3)`;
+  if (a.type === "knight") return "L-shape";
+  return `${a.range} ${a.dirs === "rook" ? "straight" : a.dirs === "bishop" ? "diagonal" : "any line"}`;
+}
+function overlayToggles(isUnit) {
+  const items = isUnit ? [["move", "Move", "var(--p" + (V ? V.you : 1) + ")"], ["range", "Range", "var(--danger)"], ["vision", "Vision", "var(--ink)"]] : [["vision", "Vision", "var(--ink)"]];
+  return `<div class="overlays">${items.map(([k, label, col]) => `<button class="ov" data-show="${k}" aria-pressed="${show[k]}"><span class="key" style="background:${col}"></span>${label}</button>`).join("")}</div>`;
+}
+// Range, movement and vision overlays for whichever unit or base is selected
+function drawOverlays(cs, it) {
+  const focus = (ui.sel && G.byId(V, ui.sel)) || (ui.inspect && G.byId(V, ui.inspect));
+  if (!focus) return;
+  const col = focus.owner === 1 ? C.p1 : C.p2;
+  if (focus.kind === "unit" && show.range) {
+    const area = G.attackArea(V, focus, it.vis);
+    const rc = area.kind === "heal" ? C.heal : C.danger;
+    ctx.fillStyle = rc + "24";
+    for (const k of area.tiles) ctx.fillRect((k % N) * cs, Math.floor(k / N) * cs, cs, cs);
+    // solid border around the edge of the attack area
+    ctx.strokeStyle = rc; ctx.lineWidth = 2; ctx.beginPath();
+    const inset = 3;
+    for (const k of area.tiles) {
+      const r = Math.floor(k / N), c = k % N, x = c * cs, y = r * cs;
+      const has = (rr, cc) => G.inB(rr, cc) && (area.tiles.has(G.key(rr, cc)) || (rr === focus.r && cc === focus.c));
+      if (!has(r - 1, c)) { ctx.moveTo(x, y + inset); ctx.lineTo(x + cs, y + inset); }
+      if (!has(r + 1, c)) { ctx.moveTo(x, y + cs - inset); ctx.lineTo(x + cs, y + cs - inset); }
+      if (!has(r, c - 1)) { ctx.moveTo(x + inset, y); ctx.lineTo(x + inset, y + cs); }
+      if (!has(r, c + 1)) { ctx.moveTo(x + cs - inset, y); ctx.lineTo(x + cs - inset, y + cs); }
+    }
+    ctx.stroke();
+  }
+  if (focus.kind === "unit" && show.move) {
+    const reach = G.computeMoves(V, focus, it.vis, true);
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.2, cs * .05);
+    for (const k of reach.keys()) {
+      if (it.moves.has(k)) continue;   // squares you can move to right now get solid dots instead
+      ctx.beginPath(); ctx.arc((k % N) * cs + cs / 2, Math.floor(k / N) * cs + cs / 2, cs * .12, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  if (show.vision) {
+    const v = focus.kind === "base" ? CONFIG.baseVision : (UNITS[focus.type].vision ?? CONFIG.unitVision);
+    const r0 = Math.max(0, focus.r - v), r1 = Math.min(N - 1, focus.r + v), c0 = Math.max(0, focus.c - v), c1 = Math.min(N - 1, focus.c + v);
+    ctx.save(); ctx.setLineDash([cs * .3, cs * .2]); ctx.strokeStyle = C.ink; ctx.globalAlpha = .7; ctx.lineWidth = 2;
+    ctx.strokeRect(c0 * cs + 1, r0 * cs + 1, (c1 - c0 + 1) * cs - 2, (r1 - r0 + 1) * cs - 2);
+    ctx.restore();
   }
 }
 function drawPiece(p, cs, alpha) {
@@ -376,7 +439,7 @@ function render() {
   else if (V.phase === "place") hint = V.youPlaced ? "Waiting for your opponent to place their base." : "Click a square in your shaded half to place your base.";
   else if (!myTurn()) hint = "Opponent's turn. You'll see hits on your units as they happen.";
   else if (ui.shop) hint = `Click a gold square to place your ${UNITS[ui.shop].name}.`;
-  else if (ui.sel) hint = "Dots: move. Red: attack. Green: heal. Click the unit again to deselect.";
+  else if (ui.sel) hint = "Dots: move. Red area: attack range. Dashed box: vision. Click the unit again to deselect.";
   else hint = "Your turn. Pick a recruit, or click one of your units.";
   hintEl.textContent = hint;
 
@@ -420,13 +483,15 @@ function render() {
     if (shown.kind === "base") {
       card = `<div class="block"><div class="card-title"><div class="swatch" style="background:${scol}"></div><strong>${mine ? "Your base" : "Enemy base"}</strong></div>
         <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>Vision <b>${CONFIG.baseVision}</b></span></div>
+        ${overlayToggles(false)}
         <div class="status">${mine ? "Recruit from the list below. Lose this and you lose the game." : "Destroy it to win. Siege units deal bonus damage here."}</div></div>`;
     } else {
       const d = UNITS[shown.type];
       const left = (UNITS[shown.type].attacks || 1) - (shown.used || 0);
       const st = !mine ? "Enemy unit." : shown.fresh ? "Just recruited. Ready next turn." : shown.moved && shown.acted ? "Done for this turn." : `${shown.moved ? "Moved" : "Can move"} · ${shown.acted ? "Acted" : left > 1 ? `${left} attacks left` : "Can act"}`;
       card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
-        <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>ATK <b>${d.atk}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
+        <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span>${d.attack ? `<span>ATK <b>${d.atk}</b></span>` : `<span>Heal <b>${d.heal.amount}</b></span>`}<span>Range <b>${rangeShort(d)}</b></span><span>Move <b>${moveShort(d.move)}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
+        ${overlayToggles(true)}
         <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div></div>`;
     }
   }
@@ -458,6 +523,11 @@ function rulesBlock() {
 panel.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || b.disabled) return;
   if (b.dataset.buy) { ui.shop = ui.shop === b.dataset.buy ? null : b.dataset.buy; ui.sel = null; ui.inspect = null; render(); }
+  else if (b.dataset.show) {
+    show[b.dataset.show] = !show[b.dataset.show];
+    try { localStorage.setItem("fogline-overlays", JSON.stringify(show)); } catch {}
+    render();
+  }
   else if (b.dataset.act === "end") { ui = { sel: null, shop: null, inspect: null }; send({ type: "end" }); }
   else if (b.dataset.act === "rematch") send({ type: "rematch" });
   else if (b.dataset.act === "copy") {
