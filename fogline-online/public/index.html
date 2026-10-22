@@ -208,7 +208,7 @@ function interaction() {
   return res;
 }
 function myTurn() { return V && V.phase === "play" && !V.winner && V.current === V.you; }
-function canRecruit(type) { return myTurn() && V.gold >= UNITS[type].cost && V.spawnsLeft > 0 && G.unitCount(V, V.you) < CONFIG.maxUnits; }
+function canRecruit(type) { return myTurn() && V.gold >= UNITS[type].cost && (!CONFIG.spawnsPerTurn || V.spawnsLeft > 0) && G.unitCount(V, V.you) < CONFIG.maxUnits; }
 
 function onBoardClick(ev) {
   if (!V || V.winner) return;
@@ -423,7 +423,7 @@ function render() {
       <div class="interest"><div class="fill" style="width:${Math.min(100, gold / maxT * 100)}%"></div>${ticks}</div>
       <div class="interest-labels">${tickLabels}</div></div></div>
     ${card}
-    <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${V.spawnsLeft} recruit left · ${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div>${tiers}</div>
+    <div class="block"><div class="recruit-head"><div class="label">Recruit</div><div class="meta">${CONFIG.spawnsPerTurn ? V.spawnsLeft + " recruits left · " : ""}${G.unitCount(V, pl)}/${CONFIG.maxUnits} units</div></div>${tiers}</div>
     <div class="block"><div class="label">Your log</div><div class="log">${V.log.map(l => `<div>${esc(l)}</div>`).join("")}</div></div>
     ${rulesBlock()}`;
   const lg = panel.querySelector(".log"); if (lg) lg.scrollTop = lg.scrollHeight;
@@ -431,8 +431,8 @@ function render() {
 function rulesBlock() {
   return `<div class="block"><details><summary>How to play</summary><ul class="rules-list">
     <li>Both players place a base in their own half. Player 1 moves first.</li>
-    <li>Every turn you earn <b>${CONFIG.baseIncome} gold</b>, plus 1 more for each of <b>${CONFIG.interestSteps.join(" and ")}</b> gold you're holding. Spend now to rush, or save to scale.</li>
-    <li>Recruit <b>${CONFIG.spawnsPerTurn}</b> unit per turn near your base (max ${CONFIG.maxUnits} on the board). New units act next turn.</li>
+    <li>Every turn you earn <b>${CONFIG.baseIncome} gold</b>, plus 1 more for each threshold (<b>${CONFIG.interestSteps.join(", ")}</b> gold) you're holding. Spend now to rush, or save to scale.</li>
+    <li>Recruit ${CONFIG.spawnsPerTurn ? `up to <b>${CONFIG.spawnsPerTurn}</b> units` : "as many units as you can afford"} each turn near your base (max ${CONFIG.maxUnits} on the board). New units act next turn.</li>
     <li>Each unit can move once and attack (or heal) once per turn, in either order.</li>
     <li>You only see squares near your units and base. Red crosshairs mark where unseen attackers hit you from.</li>
     <li>Moving into a hidden enemy stops you short and reveals the contact.</li>
