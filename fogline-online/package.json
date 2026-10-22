@@ -1,0 +1,9 @@
+{
+  "name": "fogline-tactics",
+  "version": "1.0.0",
+  "description": "Online two-player fog-of-war strategy game",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
