@@ -25,13 +25,13 @@ body {
   padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-left, 0px));
 }
 [hidden] { display: none !important; }
-.app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; max-width: 1200px; margin: 0 auto; padding-block: 16px 32px; align-items: start; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; max-width: 1500px; margin: 0 auto; padding-block: 10px 32px; align-items: start; }
 @media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
 .board-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; align-items: center; }
 .masthead { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .masthead h1 { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: .04em; margin: 0; }
 .hint { color: var(--muted); font-size: .95rem; }
-.board-wrap { width: min(100%, calc(100vh - 110px)); min-width: 260px; max-width: 100%; }
+.board-wrap { width: min(100%, calc(100vh - 70px)); min-width: 260px; max-width: 100%; }
 @media (max-width: 900px) { .board-wrap { width: 100%; } }
 canvas#board { display: block; width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; touch-action: manipulation; background: var(--tile); }
 
@@ -66,7 +66,9 @@ button, input { font: inherit; color: inherit; }
 .rc.active { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 .rc:disabled { opacity: .4; cursor: not-allowed; }
 .rc:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.rc-name { font-weight: 800; font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-name { font-weight: 800; font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+.rc-ic { flex: none; opacity: .85; }
+@media (max-width: 420px) { .rc-ic { display: none; } }
 .rc-stats { font-size: .7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .recruit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .recruit-head .meta { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); }
@@ -217,13 +219,14 @@ document.getElementById("joinForm").onsubmit = e => {
 
 /* ---------- interaction ---------- */
 function interaction() {
-  const res = { vis: new Set(), moves: new Map(), acts: new Map(), spawns: new Set() };
+  const res = { vis: new Set(), moves: new Map(), acts: new Map(), spawns: new Set(), wards: new Set() };
   if (!V) return res;
   res.vis = G.visibleSet(V, V.you);
   if (V.phase !== "play" || V.winner || V.current !== V.you) return res;
   if (ui.shop) res.spawns = G.spawnTiles(V, V.you);
   const p = ui.sel && G.byId(V, ui.sel);
-  if (p) { res.moves = G.computeMoves(V, p, res.vis); res.acts = G.computeActions(V, p, res.vis); }
+  if (p && ui.ward) res.wards = G.wardTiles(V, p);
+  else if (p) { res.moves = G.computeMoves(V, p, res.vis); res.acts = G.computeActions(V, p, res.vis); }
   return res;
 }
 function myTurn() { return V && V.phase === "play" && !V.winner && V.current === V.you; }
@@ -246,11 +249,16 @@ function onBoardClick(ev) {
     ui.shop = null; render(); return;
   }
   const sel = ui.sel && G.byId(V, ui.sel);
+  if (ui.ward) {
+    ui.ward = false;
+    if (sel && it.wards.has(k)) return send({ type: "ward", id: sel.id, r, c });
+    render(); return;
+  }
   if (sel && it.moves.has(k)) return send({ type: "move", id: sel.id, r, c });
   if (sel && it.acts.has(k)) return send({ type: "act", id: sel.id, r, c });
   const q = G.pieceAt(V, r, c);
   ui.inspect = null;
-  if (q && q.owner === V.you) { ui.sel = q.kind === "unit" && ui.sel !== q.id ? q.id : null; if (q.kind === "base") ui.inspect = q.id; }
+  if (q && q.owner === V.you) { ui.sel = q.kind === "unit" && ui.sel !== q.id ? q.id : null; if (q.kind !== "unit") ui.inspect = q.id; }
   else if (q) { ui.sel = null; ui.inspect = q.id; }
   else ui.sel = null;
   render();
@@ -288,6 +296,12 @@ function draw() {
     ctx.fillStyle = mine + "22"; ctx.fillRect(0, y0 * cs, W, (N / 2) * cs);
     ctx.strokeStyle = mine; ctx.setLineDash([6, 6]); ctx.lineWidth = 2; ctx.strokeRect(1, y0 * cs + 1, W - 2, (N / 2) * cs - 2); ctx.setLineDash([]);
   }
+  for (const k of it.wards) {
+    const r = Math.floor(k / N), c = k % N;
+    ctx.fillStyle = C.ink + "1a"; ctx.fillRect(c * cs + 2, r * cs + 2, cs - 4, cs - 4);
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.strokeRect(c * cs + 3, r * cs + 3, cs - 6, cs - 6); ctx.setLineDash([]);
+    drawIcon("scout", c * cs + cs * .3, r * cs + cs * .3, cs * .4, C.ink + "99");
+  }
   for (const k of it.spawns) {
     const r = Math.floor(k / N), c = k % N;
     ctx.fillStyle = C.gold + "26"; ctx.fillRect(c * cs + 2, r * cs + 2, cs - 4, cs - 4);
@@ -301,8 +315,9 @@ function draw() {
   }
   drawOverlays(cs, it);
   for (const p of V.pieces) {
-    const spent = p.owner === pl && p.kind === "unit" && myTurn() && (p.fresh || (p.moved && p.acted));
-    drawPiece(p, cs, spent ? 0.5 : 1);
+    // on your turn, your own units show what they have left: darker = can't act, stripes = can't move
+    const live = p.owner === pl && p.kind === "unit" && myTurn();
+    drawPiece(p, cs, 1, live && p.acted, live && p.moved);
   }
   const selP = ui.sel && G.byId(V, ui.sel);
   for (const k of it.moves.keys()) {
@@ -331,6 +346,7 @@ function rangeShort(d) {
   const a = d.attack;
   if (!a) return d.heal ? `${d.heal.range} (heal)` : "–";
   if (a.type === "melee" || a.type === "cleave") return "1";
+  if (a.type === "aura") return `${a.range} all around`;
   if (a.type === "ranged") return String(a.range);
   if (a.type === "blast") return `${a.range} (3×3)`;
   if (a.type === "knight") return "L-shape";
@@ -372,31 +388,95 @@ function drawOverlays(cs, it) {
     }
   }
   if (show.vision) {
-    const v = focus.kind === "base" ? CONFIG.baseVision : (UNITS[focus.type].vision ?? CONFIG.unitVision);
+    const v = G.visionOf(focus);
     const r0 = Math.max(0, focus.r - v), r1 = Math.min(N - 1, focus.r + v), c0 = Math.max(0, focus.c - v), c1 = Math.min(N - 1, focus.c + v);
     ctx.save(); ctx.setLineDash([cs * .3, cs * .2]); ctx.strokeStyle = C.ink; ctx.globalAlpha = .7; ctx.lineWidth = 2;
     ctx.strokeRect(c0 * cs + 1, r0 * cs + 1, (c1 - c0 + 1) * cs - 2, (r1 - r0 + 1) * cs - 2);
     ctx.restore();
   }
 }
-function drawPiece(p, cs, alpha) {
+/* Unit icons: original line drawings on a 24x24 grid. s = stroked path, f = filled path. */
+const ICONS = {
+  scout:     { s: "M3 12Q12 4 21 12Q12 20 3 12Z", f: "M9.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0Z" },
+  slinger:   { s: "M5 5Q3 16 11 18.5Q17 20 19.5 14", f: "M14.5 8a2.8 2.8 0 1 0 5.6 0a2.8 2.8 0 1 0-5.6 0Z" },
+  footman:   { s: "M8 16L19 5M6.5 12.5L11.5 17.5M4.5 19.5L8 16" },
+  spearman:  { s: "M4.5 19.5L15.5 8.5", f: "M13.5 7L20.5 3.5L17 10.5Z" },
+  cavalry:   { s: "M7 20V11a5 5 0 0 1 10 0v9M5 20H9M15 20H19" },
+  healer:    { f: "M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6Z" },
+  ballista:  { s: "M4 12H19M15 8L19 12L15 16M8 4Q13 12 8 20M8 4L4 12L8 20" },
+  bishop:    { s: "M7.5 20H16.5M10 9.5L14 13.5", f: "M12 3Q18.5 9.5 15.5 16.5H8.5Q5.5 9.5 12 3Z" },
+  assassin:  { s: "M5 19L17 7M19 19L7 7M7.5 13.5L10.5 16.5M16.5 13.5L13.5 16.5" },
+  berserker: { s: "M12 4V21", f: "M12 5.5Q4.5 4.5 3.5 11.5Q8 10 12 12ZM12 5.5Q19.5 4.5 20.5 11.5Q16 10 12 12Z" },
+  warden:    { s: "M12 7V17M8 11H16", f: "M12 3L19 6V12Q19 18 12 21Q5 18 5 12V6Z" },
+  sniper:    { s: "M12 5a7 7 0 1 0 0.01 0ZM12 2V7M12 17V22M2 12H7M17 12H22", f: "M10.5 12a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0Z" },
+  titan:     { f: "M2.5 19.5L8 9L12 14.5L16 6L21.5 19.5Z" },
+  dragon:    { f: "M3 19Q7 7 20.5 4Q17.5 8 18.5 11.5Q14.5 10.5 14.5 14.5Q11 12.5 10 16.5Q7 14.5 3 19Z" },
+  archmage:  { f: "M12 2L14.2 9.8L22 12L14.2 14.2L12 22L9.8 14.2L2 12L9.8 9.8Z" },
+};
+for (const [k, u] of Object.entries(UNITS)) u.key = k;
+const iconPaths = {};
+function drawIcon(type, x, y, size, color) {
+  const ic = ICONS[type]; if (!ic) return;
+  const P = iconPaths[type] || (iconPaths[type] = { s: ic.s && new Path2D(ic.s), f: ic.f && new Path2D(ic.f) });
+  ctx.save(); ctx.translate(x, y); ctx.scale(size / 24, size / 24);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (P.f) ctx.fill(P.f);
+  if (P.s) ctx.stroke(P.s);
+  ctx.restore();
+}
+function iconSvg(type, color, px) {
+  const ic = ICONS[type]; if (!ic) return "";
+  return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" aria-hidden="true" style="display:block">` +
+    (ic.f ? `<path d="${ic.f}" fill="${color}"/>` : "") +
+    (ic.s ? `<path d="${ic.s}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>` : "") + `</svg>`;
+}
+function darken(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = s => Math.round(((n >> s) & 255) * f);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+function drawPiece(p, cs, alpha, noAct, noMove) {
   const x = p.c * cs, y = p.r * cs, cx = x + cs / 2, cy = y + cs / 2, col = p.owner === 1 ? C.p1 : C.p2;
   ctx.save(); ctx.globalAlpha = alpha; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  if (p.kind === "base") {
-    const s = cs * .78, x0 = cx - s / 2, y0 = cy - s / 2 - cs * .04, m = s / 5;
+  ctx.beginPath(); ctx.rect(x, y, cs, cs); ctx.clip();   // never paint outside this square
+  if (p.kind === "ward") {
+    const s = cs * .62, cy2 = y + cs * .43;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx, cy2 - s / 2); ctx.lineTo(cx + s / 2, cy2); ctx.lineTo(cx, cy2 + s / 2); ctx.lineTo(cx - s / 2, cy2); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#11161a"; ctx.lineWidth = Math.max(1.2, cs * .04); ctx.stroke();
+    drawIcon("scout", cx - s * .3, cy2 - s * .3, s * .6, "#11161a");
+  } else if (p.kind === "base") {
+    const s = cs * .7, x0 = cx - s / 2 - cs * .06, y0 = y + cs * .05, m = s / 5;
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x0, y0 + s); ctx.lineTo(x0, y0);
     for (let i = 0; i < 5; i++) { const xx = x0 + i * m; ctx.lineTo(xx + m, y0 + (i % 2 === 0 ? m * .9 : 0)); ctx.lineTo(xx + m, y0 + (i % 2 === 0 ? 0 : m * .9)); }
     ctx.lineTo(x0 + s, y0 + s); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .3}px "Alegreya Sans", sans-serif`; ctx.fillText("HQ", cx, cy + cs * .04);
+    ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .27}px "Alegreya Sans", sans-serif`; ctx.fillText("HQ", x0 + s / 2, y0 + s * .6);
   } else {
     const d = UNITS[p.type];
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy - cs * .04, cs * .34, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = TIER[d.tier][1]; ctx.lineWidth = Math.max(1.5, cs * .075); ctx.stroke();
-    ctx.fillStyle = "#11161a"; ctx.font = `800 ${cs * .3}px "Alegreya Sans", sans-serif`; ctx.fillText(d.abbr, cx, cy - cs * .02);
+    const s = cs * .74, x0 = cx - s / 2, y0 = y + cs * .06;
+    ctx.fillStyle = noAct ? darken(col, .55) : col; rrect(x0, y0, s, s, s * .3); ctx.fill();
+    if (noMove) {
+      ctx.save(); rrect(x0, y0, s, s, s * .3); ctx.clip();
+      ctx.strokeStyle = noAct ? "rgba(0,0,0,.35)" : "rgba(17,22,26,.38)"; ctx.lineWidth = Math.max(1.2, s * .05); ctx.beginPath();
+      for (let k = -s; k < s * 2; k += s / 4.5) { ctx.moveTo(x0 + k, y0 + s); ctx.lineTo(x0 + k + s, y0); }
+      ctx.stroke(); ctx.restore();
+    }
+    rrect(x0, y0, s, s, s * .3);
+    ctx.strokeStyle = TIER[d.tier][1]; ctx.lineWidth = Math.max(1.5, cs * .07); ctx.stroke();
+    drawIcon(p.type, cx - s * .34, y0 + s * .16, s * .68, noAct ? "#efe8d8" : "#11161a");
   }
-  const bw = cs * .76, bh = Math.max(2.5, cs * .085), bx = cx - bw / 2, by = y + cs * .86, ratio = Math.max(0, p.hp / p.maxHp);
+  // HP tag in the bottom-right corner, plus a short bar beside it; everything stays inside this square
+  const ratio = Math.max(0, p.hp / p.maxHp), hpCol = ratio > .5 ? C.heal : ratio > .25 ? C.gold : C.danger;
+  const label = String(Math.max(0, p.hp)), th = cs * .34, fs = cs * .25;
+  ctx.font = `700 ${fs}px "IBM Plex Mono", ui-monospace, monospace`;
+  const tw = Math.max(th, ctx.measureText(label).width + cs * .14);
+  const tx = x + cs - tw - cs * .03, ty = y + cs - th - cs * .03;
+  const bx = x + cs * .08, by = y + cs * .87, bh = Math.max(2, cs * .07), bw = Math.max(0, tx - cs * .05 - bx);
   ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(bx, by, bw, bh);
-  ctx.fillStyle = ratio > .5 ? C.heal : ratio > .25 ? C.gold : C.danger; ctx.fillRect(bx, by, bw * ratio, bh);
+  ctx.fillStyle = hpCol; ctx.fillRect(bx, by, bw * ratio, bh);
+  ctx.fillStyle = "#0e1215"; rrect(tx, ty, tw, th, th * .35); ctx.fill();
+  ctx.strokeStyle = hpCol; ctx.lineWidth = Math.max(1, cs * .035); ctx.stroke();
+  ctx.fillStyle = hpCol; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, tx + tw / 2, ty + th / 2 + cs * .01);
   ctx.restore();
 }
 
@@ -408,15 +488,16 @@ function moveText(m) {
 }
 function attackText(a) {
   if (a.type === "line") return `fires ${a.dirs === "rook" ? "straight" : a.dirs === "bishop" ? "diagonally" : "in any line"}, range ${a.range}`;
-  return { melee: "strikes 1 adjacent square", cleave: "hits every adjacent enemy", ranged: `shoots any enemy within ${a.range}`,
+  return { melee: "strikes 1 adjacent square", cleave: "hits every adjacent enemy", aura: `hits every enemy within ${a.range} squares of itself`, ranged: `shoots any enemy within ${a.range}`,
     knight: "strikes L-shaped squares", blast: `blasts a 3×3 area within ${a.range}` }[a.type];
 }
 function unitDesc(d) {
   let s = `${moveText(d.move)}; ${d.attack ? attackText(d.attack) : "can't attack"}.`;
-  if ((d.attacks || 1) > 1) s += ` Attacks ${d.attacks} times per turn.`;
+  if ((d.actions || 1) > 1) s += ` Gets ${d.actions} actions per turn: move or attack, in any mix.`;
   if (d.heal) s += ` Can heal an ally ${d.heal.amount} within ${d.heal.range} instead.`;
   if (d.siege) s += ` ×${d.siege} damage to bases.`;
   if (d.vision) s += ` Sees ${d.vision}.`;
+  if (d.ward) s += ` Can place a ward next to itself as its action (${CONFIG.wardHp} HP, sees ${CONFIG.wardVision}, max ${CONFIG.maxWards}).`;
   return s;
 }
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -449,7 +530,8 @@ function render() {
   else if (V.phase === "place") hint = V.youPlaced ? "Waiting for your opponent to place their base." : "Click a square in your shaded half to place your base.";
   else if (!myTurn()) hint = "Opponent's turn. You'll see hits on your units as they happen.";
   else if (ui.shop) hint = `Click a gold square to place your ${UNITS[ui.shop].name}.`;
-  else if (ui.sel) hint = "Dots: move. Red area: attack range. Dashed box: vision. Click the unit again to deselect.";
+  else if (ui.ward) hint = "Click a dashed square next to your Scout to place a ward.";
+  else if (ui.sel) hint = "Move (dots) or attack (red rings): one per turn. Dashed box: vision. Click the unit again to deselect.";
   else hint = "Your turn. Pick a recruit, or click one of your units.";
   hintEl.textContent = hint;
 
@@ -488,23 +570,28 @@ function render() {
   const shown = (ui.sel && G.byId(V, ui.sel)) || (ui.inspect && G.byId(V, ui.inspect));
   if (shown) {
     const mine = shown.owner === pl, scol = colorOf(shown.owner);
-    if (shown.kind === "base") {
+    if (shown.kind === "ward") {
+      card = `<div class="block"><div class="card-title"><div class="swatch" style="background:${scol}"></div><strong>${mine ? "Your ward" : "Enemy ward"}</strong></div>
+        <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>Vision <b>${CONFIG.wardVision}</b></span></div>
+        ${overlayToggles(false)}
+        <div class="status">${mine ? `Keeps watch after your Scout leaves. You have ${G.wardCount(V, pl)}/${CONFIG.maxWards} wards.` : "An enemy lookout. Destroy it to blind them here."}</div></div>`;
+    } else if (shown.kind === "base") {
       card = `<div class="block"><div class="card-title"><div class="swatch" style="background:${scol}"></div><strong>${mine ? "Your base" : "Enemy base"}</strong></div>
         <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span><span>Vision <b>${CONFIG.baseVision}</b></span></div>
         ${overlayToggles(false)}
         <div class="status">${mine ? "Recruit from the list below. Lose this and you lose the game." : "Destroy it to win. Siege units deal bonus damage here."}</div></div>`;
     } else {
       const d = UNITS[shown.type];
-      const left = (UNITS[shown.type].attacks || 1) - (shown.used || 0);
-      const st = !mine ? "Enemy unit." : shown.fresh ? "Just recruited. Ready next turn." : shown.moved && shown.acted ? "Done for this turn." : `${shown.moved ? "Moved" : "Can move"} · ${shown.acted ? "Acted" : left > 1 ? `${left} attacks left` : "Can act"}`;
-      card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
+      const total = G.actionsOf(shown), left = total - (shown.used || 0);
+      const st = !mine ? "Enemy unit." : left <= 0 ? "Done for this turn." : shown.fresh ? `Just recruited: can attack this turn, but not move${total > 1 ? ` (${left} attack${left === 1 ? "" : "s"} left)` : ""}.` : shown.used ? `${left} action${left === 1 ? "" : "s"} left: move or attack.` : total > 1 ? `Ready: ${total} actions this turn, move or attack in any mix.` : "Ready: move or attack (one per turn).";
+      card = `<div class="block"><div class="card-title"><span class="chip" style="background:${scol};border-color:${TIER[d.tier][1]};grid-row:auto">${iconSvg(d.key, "#11161a", 18)}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
         <div class="stats"><span>HP <b>${shown.hp}/${shown.maxHp}</b></span>${d.attack ? `<span>ATK <b>${d.atk}</b></span>` : `<span>Heal <b>${d.heal.amount}</b></span>`}<span>Range <b>${rangeShort(d)}</b></span><span>Move <b>${moveShort(d.move)}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
         ${overlayToggles(true)}
-        <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div></div>`;
+        <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">${st}</div>${wardButton(shown)}</div>`;
     }
   } else if (ui.shop) {
     const d = UNITS[ui.shop];
-    card = `<div class="block"><div class="card-title"><span class="chip" style="background:${pc};border-color:${TIER[d.tier][1]};grid-row:auto">${d.abbr}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
+    card = `<div class="block"><div class="card-title"><span class="chip" style="background:${pc};border-color:${TIER[d.tier][1]};grid-row:auto">${iconSvg(d.key, "#11161a", 18)}</span><strong>${d.name}</strong><span class="status">Tier ${d.tier} · ${d.cost} gold</span></div>
       <div class="stats"><span>HP <b>${d.hp}</b></span>${d.attack ? `<span>ATK <b>${d.atk}</b></span>` : `<span>Heal <b>${d.heal.amount}</b></span>`}<span>Range <b>${rangeShort(d)}</b></span><span>Move <b>${moveShort(d.move)}</b></span><span>Vision <b>${d.vision ?? CONFIG.unitVision}</b></span></div>
       <div class="status">${unitDesc(d)}</div><div class="status" style="color:var(--ink)">Click a gold square next to your base to place it.</div></div>`;
   }
@@ -523,20 +610,28 @@ function render() {
     ${rulesBlock()}`;
   restoreFeed(feedScroll);
 }
+function wardButton(p) {
+  if (p.owner !== V.you || !UNITS[p.type].ward || !myTurn()) return "";
+  const n = G.wardCount(V, V.you), ok = !p.acted && !p.moved && n < CONFIG.maxWards;
+  const why = p.fresh ? "New recruits can only attack this turn" : p.acted || p.moved ? "Already used its action this turn" : n >= CONFIG.maxWards ? `Ward limit reached (${n}/${CONFIG.maxWards})` : "";
+  return `<button class="btn${ui.ward ? " primary" : ""}" data-act="ward" ${ok ? "" : "disabled"}>${ui.ward ? "Cancel ward" : `Place ward (${n}/${CONFIG.maxWards})`}</button>${why ? `<div class="status">${why}</div>` : ""}`;
+}
 function rulesBlock() {
   return `<div class="block"><details><summary>How to play</summary><ul class="rules-list">
     <li>Both players place a base in their own half. Player 1 moves first.</li>
     <li>Both players start with <b>${CONFIG.startGold} gold</b> and get nothing on turn 1. From turn 2 you earn <b>${CONFIG.baseIncome} gold</b> plus 1 interest at each of <b>${CONFIG.interestSteps.join(", ")}</b> gold you're holding. Spend now to rush, or save to scale.</li>
-    <li>Recruit ${CONFIG.spawnsPerTurn ? `up to <b>${CONFIG.spawnsPerTurn}</b> units` : "as many units as you can afford"} each turn near your base (max ${CONFIG.maxUnits} on the board). New units act next turn.</li>
-    <li>Each unit can move once and attack (or heal) once per turn, in either order.</li>
+    <li>Recruit ${CONFIG.spawnsPerTurn ? `up to <b>${CONFIG.spawnsPerTurn}</b> units` : "as many units as you can afford"} each turn near your base (max ${CONFIG.maxUnits} on the board). New recruits can attack on the turn they arrive, but can't move until next turn.</li>
+    <li>Each unit gets <b>one action per turn</b>: move <b>or</b> attack (or heal, or place a ward), never both (the Assassin gets two actions). A <b>striped</b> unit can't move any more; a <b>darker, striped</b> unit is done for the turn.</li>
     <li>You only see squares near your units and base. Enemies outside your vision are never shown, even when they hit you.</li>
     <li>Moving into a hidden enemy stops you short.</li>
+    <li>Scouts can place a <b>ward</b> next to themselves as their action for the turn. Wards have ${CONFIG.wardHp} HP, see ${CONFIG.wardVision} squares, and stay after the Scout leaves (max ${CONFIG.maxWards}).</li>
     <li>Destroy the enemy base to win.</li></ul></details></div>`;
 }
 
 panel.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b || b.disabled) return;
   if (b.dataset.buy) { ui.shop = ui.shop === b.dataset.buy ? null : b.dataset.buy; ui.sel = null; ui.inspect = null; render(); }
+  else if (b.dataset.act === "ward") { ui.ward = !ui.ward; render(); }
   else if (b.dataset.show) {
     show[b.dataset.show] = !show[b.dataset.show];
     try { localStorage.setItem("fogline-overlays", JSON.stringify(show)); } catch {}
