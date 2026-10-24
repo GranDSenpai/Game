@@ -114,6 +114,18 @@ details[open] summary { margin-bottom: 8px; }
 .join-row { display: flex; gap: 8px; }
 .join-row input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .2em; }
 .toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--danger); color: var(--ink); padding: 10px 16px; border-radius: 8px; z-index: 60; max-width: calc(100% - 32px); }
+/* your turn: board edge and turn panel take your colour */
+body.my-turn canvas#board { border-color: var(--turn); box-shadow: 0 0 0 2px var(--turn), 0 0 28px -4px var(--turn); }
+.turn-block { transition: border-color .25s, background-color .25s; }
+body.my-turn .turn-block { border-color: var(--turn); background: color-mix(in srgb, var(--turn) 16%, var(--panel)); }
+.turn-pill { display: inline-block; background: var(--turn); color: #11161a; font-weight: 800; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+.sound-btn { background: none; border: 0; color: var(--muted); font-size: .8rem; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+.sound-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  body.my-turn.turn-flash canvas#board { animation: turnPulse 1.2s ease-out; }
+  body.my-turn.turn-flash .turn-block { animation: turnPulse 1.2s ease-out; }
+}
+@keyframes turnPulse { 0% { box-shadow: 0 0 0 2px var(--turn), 0 0 0 0 var(--turn); } 35% { box-shadow: 0 0 0 2px var(--turn), 0 0 0 10px color-mix(in srgb, var(--turn) 45%, transparent); } 100% { box-shadow: 0 0 0 2px var(--turn), 0 0 28px -4px var(--turn); } }
 </style>
 </head>
 <body>
@@ -187,7 +199,7 @@ function connect(first) {
       const sel = ui.sel && G.byId(V, ui.sel);
       if (!sel || V.current !== V.you) ui.sel = null;
       if (V.current !== V.you) ui.shop = null;
-      if (!wasMyTurn && V.phase === "play" && V.current === V.you && !V.winner) { ui = { sel: null, shop: null, inspect: null }; flashTitle(); }
+      if (!wasMyTurn && V.phase === "play" && V.current === V.you && !V.winner) { ui = { sel: null, shop: null, inspect: null }; flashTitle(); setTimeout(turnStarted, 0); }
       lobby.hidden = true; gameEl.hidden = false;
       resize();
     } else if (m.type === "error") {
@@ -480,6 +492,42 @@ function drawPiece(p, cs, alpha, noAct, noMove) {
   ctx.restore();
 }
 
+/* ---------- your-turn chime and highlight ---------- */
+let audioCtx = null, soundOn = true;
+try { soundOn = localStorage.getItem("fogline-sound") !== "off"; } catch {}
+// browsers only allow sound after the player has clicked something, so unlock on the first click
+document.addEventListener("pointerdown", () => {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch {}
+}, { capture: true });
+function playTurnSound() {
+  if (!soundOn || !audioCtx || audioCtx.state !== "running") return;
+  const t0 = audioCtx.currentTime;
+  [[587.33, 0], [880, 0.13], [1174.66, 0.26]].forEach(([freq, at]) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "triangle"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0 + at);
+    g.gain.exponentialRampToValueAtTime(0.18, t0 + at + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.45);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0 + at); o.stop(t0 + at + 0.5);
+  });
+}
+function turnStarted() {
+  playTurnSound();
+  document.body.classList.remove("turn-flash"); void document.body.offsetWidth;   // restart the animation
+  document.body.classList.add("turn-flash");
+  setTimeout(() => document.body.classList.remove("turn-flash"), 1300);
+}
+function applyTurnLook() {
+  const mine = !!V && myTurn();
+  document.body.classList.toggle("my-turn", mine);
+  if (!mine) document.body.classList.remove("turn-flash");
+  if (V) document.body.style.setProperty("--turn", V.you === 1 ? "var(--p1)" : "var(--p2)");
+}
+
 /* ---------- panel ---------- */
 const panel = document.getElementById("panel"), hintEl = document.getElementById("hint");
 function moveText(m) {
@@ -517,6 +565,7 @@ function restoreFeed(s) {
 }
 function render() {
   const feedScroll = captureFeed();
+  applyTurnLook();
   draw();
   if (!V) return;
   const pl = V.you, pc = colorOf(pl);
@@ -535,13 +584,14 @@ function render() {
   else hint = "Your turn. Pick a recruit, or click one of your units.";
   hintEl.textContent = hint;
 
-  const header = `<div class="block">
+  const header = `<div class="block turn-block">
     <div class="turnbar">
       <div class="who"><div class="swatch" style="background:${pc}"></div><div><strong>You are ${pname(pl)}</strong><br>
         <span>${V.phase === "place" ? "Base placement" : `Turn ${V.turn} · ${myTurn() ? '<span class="yourturn">Your move</span>' : V.winner ? "Game over" : "Opponent's move"}`}</span></div></div>
       ${V.phase === "play" ? `<button class="btn primary" data-act="end" ${myTurn() ? "" : "disabled"}>End turn</button>` : ""}
     </div>
-    <div class="status"><span class="dot" style="background:${oppDot}"></span>${oppText} · Game ${esc(roomCode)}</div>${conn}
+    ${myTurn() ? '<div><span class="turn-pill">Your turn</span></div>' : ""}
+    <div class="status"><span class="dot" style="background:${oppDot}"></span>${oppText} · Game ${esc(roomCode)} · <button class="sound-btn" data-act="sound">Sound ${soundOn ? "on" : "off"}</button></div>${conn}
   </div>`;
   const invite = opp === "waiting" ? `<div class="block"><div class="label">Invite a friend</div>
     <div class="invite"><input id="inviteLink" readonly value="${esc(link)}"><button class="btn" data-act="copy">Copy</button></div>
@@ -635,6 +685,12 @@ panel.addEventListener("click", e => {
   else if (b.dataset.show) {
     show[b.dataset.show] = !show[b.dataset.show];
     try { localStorage.setItem("fogline-overlays", JSON.stringify(show)); } catch {}
+    render();
+  }
+  else if (b.dataset.act === "sound") {
+    soundOn = !soundOn;
+    try { localStorage.setItem("fogline-sound", soundOn ? "on" : "off"); } catch {}
+    if (soundOn) playTurnSound();
     render();
   }
   else if (b.dataset.act === "end") { ui = { sel: null, shop: null, inspect: null }; send({ type: "end" }); }

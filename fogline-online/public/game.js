@@ -49,7 +49,7 @@ const UNITS = {
   bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 3 }, attack: { type: "line", dirs: "bishop", range: 3 }, vision: 4 },
   // Tier 4
   warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
-  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 }, vision: 6 },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 2,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 8 }, vision: 6 },
   assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 3 },  attack: { type: "ranged", range: 3 }, actions: 2 },
   // Tier 5
   titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },

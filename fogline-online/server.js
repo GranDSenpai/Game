@@ -52,6 +52,16 @@ wss.on("connection", ws => {
   ws.isAlive = true;
   ws.on("pong", () => { ws.isAlive = true; });
   ws.on("message", raw => {
+    try { handle(ws, raw); }
+    catch (e) { console.error("Error handling a message:", e); send(ws, { type: "error", msg: "Something went wrong with that move. Try again." }); }
+  });
+  ws.on("close", () => {
+    const room = ws.room;
+    if (room && room.seats[ws.seat] && room.seats[ws.seat].ws === ws) { room.seats[ws.seat].ws = null; broadcast(room); }
+  });
+});
+
+function handle(ws, raw) {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === "create") {
       const code = newCode(), t = token();
@@ -84,12 +94,10 @@ wss.on("connection", ws => {
     const err = G.apply(room.state, ws.seat, msg);
     if (err) send(ws, { type: "error", msg: err });
     broadcast(room);
-  });
-  ws.on("close", () => {
-    const room = ws.room;
-    if (room && room.seats[ws.seat] && room.seats[ws.seat].ws === ws) { room.seats[ws.seat].ws = null; broadcast(room); }
-  });
-});
+}
+
+// last line of defence: log unexpected errors instead of shutting the server down
+process.on("uncaughtException", e => console.error("Unexpected error:", e));
 
 // keep connections healthy and forget games idle for 6 hours
 setInterval(() => {
