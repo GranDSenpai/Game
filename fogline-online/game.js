@@ -30,7 +30,7 @@ const CONFIG = {
                  line (first piece along rook/bishop/queen lines), knight (L squares),
                  blast (3x3 area centred on an enemy within range),
                  aura (hits every enemy within range of the unit itself).
-   attack: null means the unit can't attack. attacks: how many attacks per turn (default 1).
+   attack: null means the unit can't attack. actions: actions per turn (default 1); each action is a move OR an attack.
    tier: groups units in the shop and sets their ring colour; cost is what you pay.
    ward: the unit can place a ward (a stationary lookout) instead of attacking.
    heal: optional, used instead of attacking. siege: damage multiplier vs bases. */
@@ -46,15 +46,15 @@ const UNITS = {
   // Tier 3
   berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 8, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
   ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 5, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
-  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 5 }, attack: { type: "line", dirs: "bishop", range: 5 }, vision: 4 },
+  bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 3 }, attack: { type: "line", dirs: "bishop", range: 3 }, vision: 4 },
   // Tier 4
   warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
-  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 11 }, vision: 6 },
-  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 3 },  attack: { type: "ranged", range: 3 }, attacks: 2 },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 2,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 8 }, vision: 6 },
+  assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 3 },  attack: { type: "ranged", range: 3 }, actions: 2 },
   // Tier 5
   titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
   dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 2 } },
-  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 4,  move: { type: "step", range: 1 },   attack: { type: "aura", range: 4 } },
+  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "aura", range: 4 } },
 };
 const TIER = { 1: ["Common", "#9ea7a3"], 2: ["Uncommon", "#5fb46a"], 3: ["Rare", "#4f8fd9"], 4: ["Epic", "#a96ddc"], 5: ["Legendary", "#e3b23c"] };
 
@@ -97,9 +97,16 @@ const incomeFor = (gold) => CONFIG.baseIncome + interestFor(gold);
 const defOf = p => p.kind === "base" ? { name: "Base", atk: 0 } : p.kind === "ward" ? { name: "Ward", atk: 0 } : UNITS[p.type];
 const wardCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "ward").length;
 // empty squares next to a ward-capable unit that can still act
+const actionsOf = p => (p.kind === "unit" && UNITS[p.type].actions) || 1;
+// After each action: done when out of actions; new recruits also can't move on their first turn.
+function spend(p, n) {
+  p.used = (p.used || 0) + (n || 1);
+  p.acted = p.used >= actionsOf(p);
+  p.moved = p.fresh || p.acted;
+}
 function wardTiles(S, p) {
   const s = new Set();
-  if (p.kind !== "unit" || !UNITS[p.type].ward || p.acted || p.moved || p.fresh || wardCount(S, p.owner) >= CONFIG.maxWards) return s;
+  if (p.kind !== "unit" || !UNITS[p.type].ward || p.acted || p.moved || wardCount(S, p.owner) >= CONFIG.maxWards) return s;
   for (const [dr, dc] of KING) { const r = p.r + dr, c = p.c + dc; if (inB(r, c) && !pieceAt(S, r, c)) s.add(key(r, c)); }
   return s;
 }
@@ -113,7 +120,8 @@ function knownBlocked(S, r, c, pl, vis) {
 // preview = true ignores whether the unit has already moved (used for the range overlay)
 function computeMoves(S, p, vis, preview) {
   const out = new Map();
-  if (p.kind !== "unit" || (!preview && (p.moved || p.fresh))) return out;
+  // one action per turn: a unit that attacked can't move, and new recruits can't move
+  if (p.kind !== "unit" || (!preview && (p.fresh || (p.used || 0) >= actionsOf(p)))) return out;
   const m = UNITS[p.type].move;
   if (m.type === "step") {
     const seen = new Set([key(p.r, p.c)]);
@@ -152,7 +160,7 @@ function computeMoves(S, p, vis, preview) {
 
 function computeActions(S, p, vis) {
   const out = new Map();
-  if (p.kind !== "unit" || p.acted || p.fresh) return out;
+  if (p.kind !== "unit" || (p.used || 0) >= actionsOf(p)) return out;
   const d = UNITS[p.type], a = d.attack || { type: "none" };
   const enemy = (r, c) => { const q = pieceAt(S, r, c); return q && q.owner !== p.owner && vis.has(key(r, c)); };
   const add = (r, c, kind) => out.set(key(r, c), { kind, r, c });
@@ -286,7 +294,7 @@ function apply(S, pl, cmd) {
     if (unitCount(S, pl) >= CONFIG.maxUnits) return "Unit limit reached.";
     if (!spawnTiles(S, pl).has(key(cmd.r, cmd.c))) return "Recruit next to your base on an empty square.";
     S.gold[pl] -= d.cost; S.spawnsLeft--;
-    S.pieces.push({ id: S.nextId++, owner: pl, kind: "unit", type: cmd.unit, r: cmd.r, c: cmd.c, hp: d.hp, maxHp: d.hp, moved: true, acted: true, fresh: true });
+    S.pieces.push({ id: S.nextId++, owner: pl, kind: "unit", type: cmd.unit, r: cmd.r, c: cmd.c, hp: d.hp, maxHp: d.hp, moved: true, acted: false, fresh: true, used: 0 });
     say(S, pl, "you", `Recruited a ${d.name} for ${d.cost} gold.`);
     updateSeen(S);
     return null;
@@ -301,7 +309,7 @@ function apply(S, pl, cmd) {
     let last = null, blocker = null;
     for (const [r, c] of path) { const q = pieceAt(S, r, c); if (q) { blocker = q; break; } last = [r, c]; }
     if (last) { p.r = last[0]; p.c = last[1]; }
-    p.moved = true;
+    spend(p);
     if (blocker) {
       say(S, pl, "you", `Your ${nm} ran into a hidden enemy and stopped short.`);
       const moverSeen = visibleSet(S, blocker.owner).has(key(p.r, p.c));
@@ -313,13 +321,13 @@ function apply(S, pl, cmd) {
   if (cmd.type === "ward") {
     const d = UNITS[p.type];
     if (!d.ward) return "Only Scouts can place wards.";
-    if (p.acted || p.fresh) return "That Scout has already acted this turn.";
-    if (p.moved) return "A Scout can't move and place a ward in the same turn.";
+    if (p.fresh) return "New recruits can only attack on the turn they arrive.";
+    if (p.acted || p.moved) return "That Scout has already used its action this turn.";
     if (wardCount(S, pl) >= CONFIG.maxWards) return `You can only have ${CONFIG.maxWards} wards at once.`;
     if (!Number.isInteger(cmd.r) || !Number.isInteger(cmd.c) || !inB(cmd.r, cmd.c) || Math.max(Math.abs(cmd.r - p.r), Math.abs(cmd.c - p.c)) !== 1) return "Place the ward next to the Scout.";
     if (pieceAt(S, cmd.r, cmd.c)) return "Something is already on that square.";
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "ward", type: "ward", r: cmd.r, c: cmd.c, hp: CONFIG.wardHp, maxHp: CONFIG.wardHp });
-    p.used = (p.used || 0) + 1; p.acted = true; p.moved = true;   // placing a ward is the Scout's whole turn
+    spend(p, actionsOf(p));   // placing a ward is the Scout's whole turn
     say(S, pl, "you", `Your Scout placed a ward (${wardCount(S, pl)}/${CONFIG.maxWards}).`);
     updateSeen(S);
     return null;
@@ -328,8 +336,7 @@ function apply(S, pl, cmd) {
     const act = computeActions(S, p, vis).get(key(cmd.r, cmd.c));
     if (!act) return "No valid target there.";
     const d = UNITS[p.type], a = d.attack || { type: "none" };
-    p.used = (p.used || 0) + 1;
-    p.acted = p.used >= (d.attacks || 1);
+    spend(p);
     if (act.kind === "heal") {
       const q = pieceAt(S, act.r, act.c), before = q.hp;
       q.hp = Math.min(q.maxHp, q.hp + d.heal.amount);
@@ -376,6 +383,6 @@ function viewFor(S, pl) {
 }
 
 const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
-  placeZone, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor, visionOf, wardTiles, wardCount };
+  placeZone, actionsOf, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor, visionOf, wardTiles, wardCount };
 if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fogline = api;
 })(typeof window !== "undefined" ? window : globalThis);
