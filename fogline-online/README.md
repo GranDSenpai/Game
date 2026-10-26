@@ -34,6 +34,21 @@ Things to know about the free plan:
 - Games live in the server's memory. If the server sleeps or restarts, games in progress
   are lost. Refreshing the page or a dropped connection is fine; you rejoin your seat.
 
+## Play against the AI
+
+The lobby's **Play against the AI** block lists the opponents in `bots.js` (one file at the repo
+root). The server plays the bot through the same fog-of-war view a person gets, so it can't cheat;
+the person picks a seat (or random) and the bot places its base blind before the person does.
+Pick **Random opponent** to have the bot's name hidden until the game ends.
+
+- To change the opponents: edit `CHOICES` at the top of `bots.js` (labels, descriptions, params, or
+  remove an entry), or rebuild the file from a playtest lab folder with
+  `python3 build/build_bots.py <lab folder> bots.js [--pick label,label]` (the lab is not part of
+  this repo). Push, and Render redeploys.
+- If `bots.js` is missing or broken the site still works; the AI block just doesn't appear and the
+  server log says why.
+- Finished AI games are saved in `logs/` like any other game, with the bot's name and params.
+
 ## Rebalancing
 
 All numbers live at the top of `public/game.js`:

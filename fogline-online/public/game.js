@@ -1,20 +1,27 @@
 /* Fogline Tactics — shared game rules.
    The server runs these to decide what really happens; the browser uses the
-   same functions to highlight moves. Edit CONFIG and UNITS to rebalance. */
+   same functions to highlight moves. Edit CONFIG and UNITS to rebalance.
+
+   Rules v2 (2026-10-26). The shipped defaults below are v2. RULESETS holds the
+   v1 (Phase 1) numbers too; setRules("v1") restores them exactly, and in Node
+   the FOGLINE_RULES environment variable picks a preset at load time. */
 (function (root) {
 
 /* =====================================================================
    BALANCE KNOBS
    ===================================================================== */
 const CONFIG = {
-  boardSize: 20,          // board is boardSize x boardSize
+  rules: "v2",            // ruleset label, written into game logs (see RULESETS)
+  boardSize: 20,          // board is boardSize x boardSize (fixed at load; not a runtime override)
   startGold: 12,               // both players start with this; no income on turn 1
   secondPlayerBonus: 0,       // extra starting gold for player 2
   baseIncome: 2,              // gold every turn from turn 2
   interestBase: 0,            // interest you always get (holding 0 gold)
   interestSteps: [4, 8, 12, 16], // +1 more interest for each threshold you hold at turn start
+  interestAtCap: true,    // false: no interest on a turn you start at the unit cap
   baseHp: 50,
   baseVision: 4,          // squares the base reveals (any direction)
+  baseMinDepth: 4,        // rows a base must keep between itself and the middle of the board (0 = anywhere in your half)
   unitVision: 3,          // default squares a unit reveals
   spawnRadius: 2,         // how far from your base you can place recruits
   wardHp: 5,              // Scout wards
@@ -22,14 +29,17 @@ const CONFIG = {
   maxWards: 3,            // wards each player can have on the board at once
   spawnsPerTurn: 0,       // recruits per turn (0 = no limit)
   maxUnits: 20,           // units on the board at once
+  blastAnywhere: true,    // blast attacks can be aimed at any square in range, even empty or in the fog
+  hideEnemyIds: true,     // enemy pieces get stand-in ids in your view, so ids can't hint at when they were recruited
 };
 
 /* Move types:   step (walks around obstacles), rook, bishop, queen (slide in lines, blocked),
                  knight (L-jump over anything), fly (lands anywhere within range).
    Attack types: melee (one adjacent), cleave (all adjacent enemies), ranged (any within range),
                  line (first piece along rook/bishop/queen lines), knight (L squares),
-                 blast (3x3 area centred on an enemy within range),
-                 aura (hits every enemy within range of the unit itself).
+                 blast (aim at a square within range; hits every enemy in the 3x3 around it, seen or not;
+                        with blastAnywhere off the aim square must hold a visible enemy),
+                 aura (hits every enemy within range of the unit itself, seen or not).
    attack: null means the unit can't attack. actions: actions per turn (default 1); each action is a move OR an attack.
    tier: groups units in the shop and sets their ring colour; cost is what you pay.
    ward: the unit can place a ward (a stationary lookout) instead of attacking.
@@ -41,22 +51,48 @@ const UNITS = {
   footman:   { name: "Footman",    abbr: "Ft", tier: 1, cost: 1, hp: 6,  atk: 3,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
   // Tier 2
   spearman:  { name: "Spearman",   abbr: "Sp", tier: 2, cost: 3, hp: 7,  atk: 4,  move: { type: "queen", range: 2 },  attack: { type: "melee" } },
-  cavalry:   { name: "Cavalry",    abbr: "Cv", tier: 2, cost: 3, hp: 5,  atk: 5,  move: { type: "rook", range: 4 },   attack: { type: "melee" } },
+  cavalry:   { name: "Cavalry",    abbr: "Cv", tier: 2, cost: 3, hp: 5,  atk: 5,  move: { type: "rook", range: 4 },   attack: { type: "melee" }, vision: 4 },
   healer:    { name: "Healer",     abbr: "He", tier: 2, cost: 3, hp: 3,  atk: 0,  move: { type: "step", range: 2 },   attack: null, heal: { amount: 5, range: 2 } },
   // Tier 3
-  berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 8, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
   ballista:  { name: "Ballista",   abbr: "Bl", tier: 3, cost: 5, hp: 5,  atk: 5,  move: { type: "step", range: 1 },   attack: { type: "line", dirs: "rook", range: 4 }, siege: 2 },
   bishop:    { name: "Bishop",     abbr: "Bi", tier: 3, cost: 5, hp: 8,  atk: 7,  move: { type: "bishop", range: 3 }, attack: { type: "line", dirs: "bishop", range: 3 }, vision: 4 },
-  // Tier 4
-  warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
-  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 2,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 8 }, vision: 6 },
   assassin:  { name: "Assassin",   abbr: "As", tier: 3, cost: 5, hp: 10, atk: 2,  move: { type: "queen", range: 3 },  attack: { type: "ranged", range: 3 }, actions: 2 },
+  // Tier 4
+  berserker: { name: "Berserker",  abbr: "Bz", tier: 4, cost: 8, hp: 7,  atk: 20, move: { type: "step", range: 2 },   attack: { type: "melee" } },
+  warden:    { name: "Warden",     abbr: "Wd", tier: 4, cost: 8, hp: 25, atk: 4,  move: { type: "step", range: 2 },   attack: { type: "cleave" } },
+  sniper:    { name: "Sniper",     abbr: "Sn", tier: 4, cost: 8, hp: 10, atk: 2,  move: { type: "step", range: 1 },   attack: { type: "ranged", range: 6 }, vision: 6 },
   // Tier 5
   titan:     { name: "Titan",      abbr: "Ti", tier: 5, cost: 12, hp: 35, atk: 5,  move: { type: "step", range: 1 },   attack: { type: "cleave" }, siege: 2 },
   dragon:    { name: "Dragon",     abbr: "Dr", tier: 5, cost: 12, hp: 20, atk: 10, move: { type: "fly", range: 3 },    attack: { type: "line", dirs: "queen", range: 2 } },
-  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "aura", range: 4 } },
+  archmage:  { name: "Archmage",   abbr: "Am", tier: 5, cost: 12, hp: 15, atk: 3,  move: { type: "step", range: 1 },   attack: { type: "blast", range: 4 } },
 };
 const TIER = { 1: ["Common", "#9ea7a3"], 2: ["Uncommon", "#5fb46a"], 3: ["Rare", "#4f8fd9"], 4: ["Epic", "#a96ddc"], 5: ["Legendary", "#e3b23c"] };
+
+/* Named rulesets. A preset lists only what differs between versions; everything else is the
+   CONFIG/UNITS above. setRules(name) applies a preset in place; setRules({ config, units }) applies
+   ad-hoc overrides (for what-if runs) and marks the label with a "*". boardSize can't change at runtime. */
+const RULESETS = {
+  v1: { label: "Phase 1 rules (frozen 2026-10-25)",
+        config: { baseMinDepth: 0, blastAnywhere: false, interestAtCap: true, hideEnemyIds: false },
+        units: { sniper: { attack: { type: "ranged", range: 8 } }, archmage: { attack: { type: "aura", range: 4 } } } },
+  v2: { label: "Rules v2 (2026-10-26): blast Archmage, Sniper range 6, bases 4 rows back, hidden enemy ids",
+        config: { baseMinDepth: 4, blastAnywhere: true, interestAtCap: true, hideEnemyIds: true },
+        units: { sniper: { attack: { type: "ranged", range: 6 } }, archmage: { attack: { type: "blast", range: 4 } } } },
+};
+function setRules(spec) {
+  const s = typeof spec === "string" ? RULESETS[spec] : spec;
+  if (!s) throw new Error("Unknown ruleset: " + spec);
+  for (const [k, v] of Object.entries(s.config || {})) {
+    if (k === "boardSize") throw new Error("boardSize can't be changed at runtime");
+    CONFIG[k] = Array.isArray(v) ? v.slice() : v;
+  }
+  for (const [u, fields] of Object.entries(s.units || {})) {
+    if (!UNITS[u]) throw new Error("Unknown unit: " + u);
+    for (const [k, v] of Object.entries(fields)) UNITS[u][k] = v && typeof v === "object" && !Array.isArray(v) ? Object.assign({}, v) : v;
+  }
+  CONFIG.rules = typeof spec === "string" ? spec : (s.rules || CONFIG.rules.replace(/\*$/, "") + "*");
+  return CONFIG.rules;
+}
 
 /* ===================================================================== */
 const N = CONFIG.boardSize;
@@ -71,10 +107,12 @@ const cheb = (a, b, c, d) => Math.max(Math.abs(a - c), Math.abs(b - d));
 
 function newGame() {
   return {
-    phase: "place", current: 1, turn: 0, pieces: [], nextId: 1,
+    rules: CONFIG.rules, phase: "place", current: 1, turn: 0, pieces: [], nextId: 1,
     gold: { 1: CONFIG.startGold, 2: CONFIG.startGold + CONFIG.secondPlayerBonus },
     spawnsLeft: 0, seenBase: { 1: null, 2: null }, pings: { 1: [], 2: [] },
     feed: { 1: [], 2: [] }, winner: null,
+    alias: { 1: {}, 2: {} },              // per-player stand-in ids for enemy pieces (see viewFor)
+    history: [], startedAt: Date.now(),   // every move, revealed only when the game ends
   };
 }
 
@@ -93,7 +131,8 @@ function visibleSet(S, pl) {
 const unitCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "unit").length;
 const baseOf = (S, pl) => S.pieces.find(p => p.owner === pl && p.kind === "base");
 const interestFor = (gold) => CONFIG.interestBase + CONFIG.interestSteps.filter(t => gold >= t).length;
-const incomeFor = (gold) => CONFIG.baseIncome + interestFor(gold);
+// atCap: the player starts the turn with maxUnits on the board (only matters when interestAtCap is off)
+const incomeFor = (gold, atCap) => CONFIG.baseIncome + (atCap && !CONFIG.interestAtCap ? 0 : interestFor(gold));
 const defOf = p => p.kind === "base" ? { name: "Base", atk: 0 } : p.kind === "ward" ? { name: "Ward", atk: 0 } : UNITS[p.type];
 const wardCount = (S, pl) => S.pieces.filter(p => p.owner === pl && p.kind === "ward").length;
 // empty squares next to a ward-capable unit that can still act
@@ -110,7 +149,15 @@ function wardTiles(S, p) {
   for (const [dr, dc] of KING) { const r = p.r + dr, c = p.c + dc; if (inB(r, c) && !pieceAt(S, r, c)) s.add(key(r, c)); }
   return s;
 }
-const placeZone = (pl, r) => pl === 1 ? r >= N / 2 : r < N / 2;
+// Rows a player may place their base on: their own half, minus baseMinDepth rows next to the middle.
+const placeRows = pl => pl === 1 ? [N / 2 + CONFIG.baseMinDepth, N - 1] : [0, N / 2 - 1 - CONFIG.baseMinDepth];
+const placeZone = (pl, r) => { const [a, b] = placeRows(pl); return r >= a && r <= b; };
+// The 3x3 box a blast aimed at (r, c) covers (in-bounds squares only).
+function blastArea(r, c) {
+  const s = new Set();
+  for (const [dr, dc] of KING.concat([[0, 0]])) if (inB(r + dr, c + dc)) s.add(key(r + dr, c + dc));
+  return s;
+}
 
 function knownBlocked(S, r, c, pl, vis) {
   const q = pieceAt(S, r, c);
@@ -166,6 +213,10 @@ function computeActions(S, p, vis) {
   const add = (r, c, kind) => out.set(key(r, c), { kind, r, c });
   if (a.type === "melee" || a.type === "cleave") {
     for (const [dr, dc] of KING) { const r = p.r + dr, c = p.c + dc; if (inB(r, c) && enemy(r, c)) add(r, c, "attack"); }
+  } else if (a.type === "blast" && CONFIG.blastAnywhere) {
+    // aim anywhere in range (not your own square): the blast hits whatever is in the 3x3 box, seen or not
+    for (let r = p.r - a.range; r <= p.r + a.range; r++) for (let c = p.c - a.range; c <= p.c + a.range; c++)
+      if (inB(r, c) && !(r === p.r && c === p.c)) add(r, c, "attack");
   } else if (a.type === "ranged" || a.type === "blast" || a.type === "aura") {
     for (let r = p.r - a.range; r <= p.r + a.range; r++) for (let c = p.c - a.range; c <= p.c + a.range; c++)
       if (inB(r, c) && enemy(r, c)) add(r, c, "attack");
@@ -229,15 +280,24 @@ function updateSeen(S) {
   }
 }
 
+/* ---------- full game log ---------- */
+// Squares use chess-style names: columns a–t left to right, rows 1–20 from Player 1's side (bottom).
+const sq = (r, c) => String.fromCharCode(97 + c) + (N - r);
+const tag = p => p.kind === "base" ? `P${p.owner} Base` : p.kind === "ward" ? `P${p.owner} Ward #${p.id}` : `P${p.owner} ${UNITS[p.type].name} #${p.id}`;
+let current = null;   // the attack being resolved, so damage() can add its hits
+function record(S, e) { e.n = S.history.length + 1; e.turn = S.turn; S.history.push(e); return e; }
+
 function startTurn(S, pl) {
   S.current = pl;
   if (pl === 1) S.turn++;
-  const inc = S.turn === 1 ? 0 : incomeFor(S.gold[pl]);
+  const inc = S.turn === 1 ? 0 : incomeFor(S.gold[pl], unitCount(S, pl) >= CONFIG.maxUnits);
   S.gold[pl] += inc;
   for (const p of S.pieces) if (p.owner === pl) { p.moved = false; p.acted = false; p.fresh = false; p.used = 0; }
   S.spawnsLeft = CONFIG.spawnsPerTurn;
   for (const p of [1, 2]) say(S, p, "turn", `Turn ${S.turn} · ${p === pl ? "Your turn" : "Enemy's turn"}`);
   say(S, pl, "you", S.turn === 1 ? `You start with ${S.gold[pl]} gold.` : `Collected ${inc} gold (${CONFIG.baseIncome} + ${inc - CONFIG.baseIncome} interest).`);
+  record(S, { type: "turn", player: pl, income: inc, gold: S.gold[pl], units: unitCount(S, pl),
+    text: `=== Turn ${S.turn} · Player ${pl} · +${inc} gold, now ${S.gold[pl]} · ${unitCount(S, pl)} units ===` });
 }
 
 function damage(S, target, amt, attacker) {
@@ -249,6 +309,7 @@ function damage(S, target, amt, attacker) {
   const theirAttacker = attackerSeen ? `an enemy ${an}` : "an unseen enemy";
   const theirTarget = targetSeen ? `an enemy ${tn}` : "an unseen enemy";
   target.hp -= amt;
+  if (current) current.hits.push({ target: tag(target), at: sq(target.r, target.c), dmg: amt, hpLeft: Math.max(0, target.hp), destroyed: target.hp <= 0 });
   if (target.hp <= 0) {
     S.pieces = S.pieces.filter(q => q !== target);
     say(S, attacker.owner, "you", `Your ${an} destroyed ${theirTarget}.`);
@@ -271,9 +332,11 @@ function apply(S, pl, cmd) {
     if (S.phase !== "place") return "Bases are already placed.";
     if (baseOf(S, pl)) return "You already placed your base.";
     const { r, c } = cmd;
-    if (!Number.isInteger(r) || !Number.isInteger(c) || !inB(r, c) || !placeZone(pl, r) || pieceAt(S, r, c)) return "Place your base in your own half.";
+    if (!Number.isInteger(r) || !Number.isInteger(c) || !inB(r, c) || !placeZone(pl, r) || pieceAt(S, r, c))
+      return CONFIG.baseMinDepth ? `Place your base in your own half, at least ${CONFIG.baseMinDepth} rows from the middle.` : "Place your base in your own half.";
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "base", type: "base", r, c, hp: CONFIG.baseHp, maxHp: CONFIG.baseHp });
     say(S, pl, "you", "You placed your base.");
+    record(S, { type: "place", player: pl, at: sq(r, c), text: `P${pl} placed their base at ${sq(r, c)}` });
     if (baseOf(S, 1) && baseOf(S, 2)) { S.phase = "play"; startTurn(S, 1); }
     return null;
   }
@@ -283,6 +346,7 @@ function apply(S, pl, cmd) {
 
   if (cmd.type === "end") {
     S.pings[pl] = [];
+    record(S, { type: "end", player: pl, gold: S.gold[pl], text: `P${pl} ended their turn holding ${S.gold[pl]} gold` });
     startTurn(S, 3 - pl);
     return null;
   }
@@ -295,7 +359,10 @@ function apply(S, pl, cmd) {
     if (!spawnTiles(S, pl).has(key(cmd.r, cmd.c))) return "Recruit next to your base on an empty square.";
     S.gold[pl] -= d.cost; S.spawnsLeft--;
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "unit", type: cmd.unit, r: cmd.r, c: cmd.c, hp: d.hp, maxHp: d.hp, moved: true, acted: false, fresh: true, used: 0 });
-    say(S, pl, "you", `Recruited a ${d.name} for ${d.cost} gold.`);
+    say(S, pl, "you", `Recruited ${/^[aeiou]/i.test(d.name) ? "an" : "a"} ${d.name} for ${d.cost} gold.`);
+    { const u = S.pieces[S.pieces.length - 1];
+      record(S, { type: "recruit", player: pl, unit: cmd.unit, id: u.id, at: sq(u.r, u.c), cost: d.cost, gold: S.gold[pl],
+        text: `${tag(u)} recruited at ${sq(u.r, u.c)} for ${d.cost} gold (${S.gold[pl]} left)` }); }
     updateSeen(S);
     return null;
   }
@@ -307,8 +374,11 @@ function apply(S, pl, cmd) {
     const path = computeMoves(S, p, vis).get(key(cmd.r, cmd.c));
     if (!path) return "That unit can't move there.";
     let last = null, blocker = null;
+    const from = sq(p.r, p.c), aimed = sq(cmd.r, cmd.c);
     for (const [r, c] of path) { const q = pieceAt(S, r, c); if (q) { blocker = q; break; } last = [r, c]; }
     if (last) { p.r = last[0]; p.c = last[1]; }
+    record(S, { type: "move", player: pl, unit: p.type, id: p.id, from, to: sq(p.r, p.c), aimed, blockedBy: blocker ? tag(blocker) : null,
+      text: blocker ? `${tag(p)} tried ${from} → ${aimed}, ran into hidden ${tag(blocker)} at ${sq(blocker.r, blocker.c)}, stopped at ${sq(p.r, p.c)}` : `${tag(p)} moved ${from} → ${sq(p.r, p.c)}` });
     spend(p);
     if (blocker) {
       say(S, pl, "you", `Your ${nm} ran into a hidden enemy and stopped short.`);
@@ -329,6 +399,8 @@ function apply(S, pl, cmd) {
     S.pieces.push({ id: S.nextId++, owner: pl, kind: "ward", type: "ward", r: cmd.r, c: cmd.c, hp: CONFIG.wardHp, maxHp: CONFIG.wardHp });
     spend(p, actionsOf(p));   // placing a ward is the Scout's whole turn
     say(S, pl, "you", `Your Scout placed a ward (${wardCount(S, pl)}/${CONFIG.maxWards}).`);
+    { const w = S.pieces[S.pieces.length - 1];
+      record(S, { type: "ward", player: pl, id: p.id, wardId: w.id, at: sq(w.r, w.c), text: `${tag(p)} at ${sq(p.r, p.c)} placed ${tag(w)} at ${sq(w.r, w.c)}` }); }
     updateSeen(S);
     return null;
   }
@@ -341,6 +413,8 @@ function apply(S, pl, cmd) {
       const q = pieceAt(S, act.r, act.c), before = q.hp;
       q.hp = Math.min(q.maxHp, q.hp + d.heal.amount);
       say(S, pl, "you", `${d.name} healed ${UNITS[q.type].name} for ${q.hp - before}.`);
+      record(S, { type: "heal", player: pl, unit: p.type, id: p.id, from: sq(p.r, p.c), target: tag(q), at: sq(q.r, q.c), amount: q.hp - before, hpAfter: q.hp,
+        text: `${tag(p)} at ${sq(p.r, p.c)} healed ${tag(q)} at ${sq(q.r, q.c)} for ${q.hp - before} (now ${q.hp}/${q.maxHp})` });
       return null;
     }
     const targets = [];
@@ -356,10 +430,19 @@ function apply(S, pl, cmd) {
     } else {
       const q = pieceAt(S, act.r, act.c); if (q) targets.push(q);
     }
-    for (const t of targets) {
-      if (S.winner) break;
-      damage(S, t, d.atk * (t.kind === "base" ? (d.siege || 1) : 1), p);
-    }
+    const entry = record(S, { type: "attack", player: pl, unit: p.type, id: p.id, from: sq(p.r, p.c), aimed: sq(act.r, act.c), hits: [] });
+    current = entry;
+    try {
+      for (const t of targets) {
+        if (S.winner) break;
+        damage(S, t, d.atk * (t.kind === "base" ? (d.siege || 1) : 1), p);
+      }
+    } finally { current = null; }
+    entry.text = `${tag(p)} at ${entry.from} attacked ${entry.aimed}: ` + (entry.hits.length
+      ? entry.hits.map(h => h.destroyed ? `destroyed ${h.target} (${h.dmg} dmg)` : `hit ${h.target} for ${h.dmg} (${h.hpLeft} left)`).join("; ")
+      : "nothing hit");
+    if (!targets.length && a.type === "blast") say(S, pl, "you", `Your ${nm} blasted ${sq(act.r, act.c)} and hit nothing.`);
+    if (S.winner) record(S, { type: "win", player: S.winner, text: `*** Player ${S.winner} wins: the enemy base fell on turn ${S.turn} ***` });
     updateSeen(S);
     return null;
   }
@@ -367,22 +450,74 @@ function apply(S, pl, cmd) {
 }
 
 /* What one player is allowed to know. Hidden enemies never leave the server. */
+// Enemy pieces are numbered in the order this player first saw them (from 100001), so the id says
+// nothing about when they were recruited. The stand-in is stable for as long as the piece lives.
+function aliasFor(S, pl, p) {
+  if (!S.alias) S.alias = { 1: {}, 2: {} };
+  const m = S.alias[pl];
+  if (m[p.id] === undefined) m[p.id] = 100000 + Object.keys(m).length + 1;
+  return m[p.id];
+}
+
 function viewFor(S, pl) {
   const reveal = !!S.winner;
   const vis = visibleSet(S, pl);
   const eb = baseOf(S, 3 - pl);
   return {
-    you: pl, phase: S.phase, current: S.current, turn: S.turn, winner: S.winner,
+    you: pl, phase: S.phase, current: S.current, turn: S.turn, winner: S.winner, rules: S.rules || CONFIG.rules,
     gold: S.gold[pl], spawnsLeft: S.current === pl ? S.spawnsLeft : 0,
     youPlaced: !!baseOf(S, pl),
-    pieces: S.pieces.filter(p => reveal || p.owner === pl || vis.has(key(p.r, p.c))),
+    // Your own pieces include their turn flags; enemy pieces only show what's visible on the board,
+    // so nothing (like "recruited last turn") hints at where their base is.
+    pieces: S.pieces.filter(p => reveal || p.owner === pl || vis.has(key(p.r, p.c)))
+      .map(p => reveal || p.owner === pl ? p : { id: CONFIG.hideEnemyIds ? aliasFor(S, pl, p) : p.id, owner: p.owner, kind: p.kind, type: p.type, r: p.r, c: p.c, hp: p.hp, maxHp: p.maxHp }),
     seenBase: S.seenBase[pl] && eb ? S.seenBase[pl] : null,
     pings: S.pings[pl], feed: S.feed[pl],
+    history: reveal ? S.history : null,   // the full move list only appears once the game is over
     reveal,
   };
 }
 
-const api = { CONFIG, UNITS, TIER, N, key, inB, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
-  placeZone, actionsOf, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor, visionOf, wardTiles, wardCount };
+/* Readable game log with a summary, for players and for analysis tools. */
+function formatLog(history, meta) {
+  meta = meta || {};
+  const lines = [];
+  const win = history.find(e => e.type === "win");
+  lines.push("FOGLINE TACTICS · FULL GAME LOG");
+  if (meta.room) lines.push(`Game: ${meta.room}`);
+  if (meta.rules) lines.push(`Rules: ${meta.rules}`);
+  if (meta.ai) lines.push(`AI: ${meta.ai.label} played as Player ${meta.ai.seat}`);
+  else if (meta.opponent) lines.push(`Opponent: ${meta.opponent}`);
+  if (meta.startedAt) lines.push(`Started: ${new Date(meta.startedAt).toISOString()}`);
+  lines.push(`Result: ${win ? `Player ${win.player} won on turn ${win.turn}` : "unfinished"}`);
+  lines.push("Squares: columns a–t left to right, rows 1–20 counted from Player 1's side.");
+  lines.push("");
+  lines.push("SUMMARY");
+  for (const pl of [1, 2]) {
+    const mine = history.filter(e => e.player === pl);
+    const bought = {};
+    let spent = 0;
+    for (const e of mine) if (e.type === "recruit") { bought[e.unit] = (bought[e.unit] || 0) + 1; spent += e.cost; }
+    let dealt = 0, kills = 0;
+    for (const e of mine) if (e.type === "attack") for (const h of e.hits) { dealt += h.dmg; if (h.destroyed) kills++; }
+    const lost = history.filter(e => e.type === "attack" && e.player !== pl).reduce((n, e) => n + e.hits.filter(h => h.destroyed && h.target.startsWith(`P${pl} `)).length, 0);
+    const mix = Object.entries(bought).map(([k, n]) => `${UNITS[k] ? UNITS[k].name : k} ×${n}`).join(", ") || "none";
+    lines.push(`Player ${pl}: spent ${spent} gold · recruited ${mix} · dealt ${dealt} damage · destroyed ${kills} · lost ${lost}`);
+  }
+  lines.push("");
+  lines.push("MOVES");
+  for (const e of history) lines.push(e.type === "turn" ? `\n${e.text}` : `  ${String(e.n).padStart(4)}. ${e.text}`);
+  return lines.join("\n");
+}
+
+const api = { CONFIG, UNITS, TIER, RULESETS, setRules, N, key, inB, cheb, newGame, pieceAt, byId, visibleSet, unitCount, baseOf, incomeFor, interestFor,
+  placeZone, placeRows, blastArea, actionsOf, computeMoves, computeActions, attackArea, spawnTiles, apply, viewFor, visionOf, wardTiles, wardCount, formatLog, sq };
+// In Node, FOGLINE_RULES selects a ruleset at load time, so lab tools can reproduce earlier results or
+// run what-ifs without touching this file: a preset name (FOGLINE_RULES=v1), or a JSON override such as
+// FOGLINE_RULES='{"rules":"v2+sniper7","units":{"sniper":{"attack":{"type":"ranged","range":7}}}}'.
+if (typeof process !== "undefined" && process.env && process.env.FOGLINE_RULES) {
+  const spec = process.env.FOGLINE_RULES.trim();
+  setRules(spec.startsWith("{") ? JSON.parse(spec) : spec);
+}
 if (typeof module !== "undefined" && module.exports) module.exports = api; else root.Fogline = api;
 })(typeof window !== "undefined" ? window : globalThis);
