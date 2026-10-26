@@ -10,6 +10,9 @@ const { WebSocketServer } = require("ws");
 const G = require("./public/game.js");
 
 const PORT = process.env.PORT || 3000;
+const SERVER_VERSION = "2026-10-26b (AI opponents + GitHub log saving)";
+const STARTED_AT = new Date().toISOString();
+let lastSave = null;   // result of the most recent GitHub save, shown at /api/status
 const PUBLIC = path.join(__dirname, "public");
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css", ".svg": "image/svg+xml" };
 
@@ -24,6 +27,12 @@ function botList() { return BOTS ? BOTS.CHOICES.map(c => ({ id: c.id, label: c.l
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
+  if (url.pathname === "/api/status") {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" });
+    return res.end(JSON.stringify({ server: SERVER_VERSION, rules: G.CONFIG.rules, startedAt: STARTED_AT, bots: botList().map(b => b.label),
+      logSaving: LOG_REPO && GITHUB_TOKEN ? `on: github.com/${LOG_REPO}` : `off (${!LOG_REPO ? "LOG_REPO" : ""}${!LOG_REPO && !GITHUB_TOKEN ? " and " : ""}${!GITHUB_TOKEN ? "GITHUB_TOKEN" : ""} not set)`,
+      lastSave }, null, 2));
+  }
   if (url.pathname === "/api/bots") {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" });
     return res.end(JSON.stringify({ bots: botList() }));
@@ -191,7 +200,36 @@ function saveLog(room) {
     const text = G.formatLog(room.state.history, meta);
     fs.writeFileSync(base + ".txt", text);
     console.log(`Game ${room.code} finished: Player ${room.state.winner} won on turn ${room.state.turn}${room.ai ? ` (AI ${room.ai.bot.label} was Player ${room.ai.seat})` : ""}. Log saved to ${base}.txt\n` + text);
+    const day = stamp.slice(0, 10), name = `${stamp}-${room.code}${room.ai ? "-vs-" + room.ai.bot.id : ""}`;
+    pushToGitHub(`games/${day}/${name}.json`, fs.readFileSync(base + ".json", "utf8"), `Game ${room.code}: P${room.state.winner} won on turn ${room.state.turn}`);
+    pushToGitHub(`games/${day}/${name}.txt`, text, `Game ${room.code} (readable log)`);
   } catch (e) { console.error("Couldn't save game log:", e); }
+}
+
+/* Permanent copies: if LOG_REPO ("owner/repo") and GITHUB_TOKEN are set, every finished game is also
+   committed to that (separate, private) repository. Never point this at the game's own repo: a commit
+   there would make Render redeploy and drop every game in progress. */
+const LOG_REPO = process.env.LOG_REPO, GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+if (LOG_REPO && GITHUB_TOKEN) console.log(`Finished games will be saved to github.com/${LOG_REPO}`);
+else console.log("LOG_REPO / GITHUB_TOKEN not set: game logs are only kept until the server restarts.");
+async function pushToGitHub(file, content, message, attempt = 1) {
+  if (!LOG_REPO || !GITHUB_TOKEN) { lastSave = { file, at: new Date().toISOString(), result: "skipped: LOG_REPO / GITHUB_TOKEN not set" }; return console.log(`Not saved to GitHub (LOG_REPO / GITHUB_TOKEN not set): ${file}`); }
+  try {
+    const res = await fetch(`${process.env.GITHUB_API || "https://api.github.com"}/repos/${LOG_REPO}/contents/${file}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "fogline-server", "X-GitHub-Api-Version": "2022-11-28" },
+      body: JSON.stringify({ message, content: Buffer.from(content, "utf8").toString("base64") }),
+    });
+    if (res.ok) { lastSave = { file, at: new Date().toISOString(), result: "saved" }; return console.log(`Saved ${file} to ${LOG_REPO}`); }
+    const body = await res.text();
+    if (attempt < 3 && (res.status === 409 || res.status >= 500)) { await sleep(2000 * attempt); return pushToGitHub(file, content, message, attempt + 1); }
+    lastSave = { file, at: new Date().toISOString(), result: `failed: GitHub said ${res.status} ${body.slice(0, 160)}` };
+    console.error(`GitHub save failed for ${file}: ${res.status} ${body.slice(0, 200)}`);
+  } catch (e) {
+    if (attempt < 3) { await sleep(2000 * attempt); return pushToGitHub(file, content, message, attempt + 1); }
+    lastSave = { file, at: new Date().toISOString(), result: `failed: ${e.message}` };
+    console.error(`GitHub save failed for ${file}:`, e.message);
+  }
 }
 
 // last line of defence: log unexpected errors instead of shutting the server down
@@ -205,4 +243,4 @@ setInterval(() => {
   for (const [code, room] of rooms) if (room.touched < cutoff) rooms.delete(code);
 }, 30000);
 
-server.listen(PORT, () => console.log(`Fogline Tactics running on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Fogline Tactics server ${SERVER_VERSION} running on port ${PORT}`));
